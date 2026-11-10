@@ -90,6 +90,14 @@ Standard: `~/FEE-Mandate` – überschreibbar mit `FEE_MANDATE_DIR=/pfad ./run.s
 
 Jeder Subagent hat eine eigene `SOUL.md` (Mission + Regeln) in `subagents/<name>/`.
 
+## Eingebaute Fähigkeits-Module (nach den Hermes-Plugins headroom, graphify, memory)
+
+| Modul | Vorbild | Was es für Master + Subagenten tut |
+|---|---|---|
+| `feeagent/headroom.py` | headroom | Schwere Jobs (OCR, LibreOffice) laufen nur bei genug freiem RAM, eine nach der anderen, mit Queue und sauberer Fehlermeldung statt Absturz. Status: `GET /api/headroom` |
+| `feeagent/graph.py` | graphify | Mandats-Wissensgraph: extrahiert Normen, Daten, Beträge, Aktenzeichen aus allen Dokumenten-Volltexten – Subagenten erhalten die Graph-Zusammenfassung statt ganzer Dokumente (Token-Ersparnis). `GET /api/mandates/{slug}/graph`, gespeichert als `graph.json` |
+| `feeagent/memory.py` | memory | Sitzungsübergreifendes Mandats-Gedächtnis: Fakten/Fristen als `memory.jsonl`; der Workflow destilliert Subagenten-Ergebnisse automatisch in Memory-Einträge und lädt das Memory beim nächsten Lauf als Kontext. `GET/POST /api/mandates/{slug}/memory` |
+
 ## Beziehung zu F.E.E.
 
 FEE-Agent ist die Orchestrierungsschicht; F.E.E. (`b3nb0x/F.E.E.`) liefert das juristische Handwerk (Skills, Instincts, Security, Mandatskonvention). Beide Repos können unabhängig genutzt werden: F.E.E. in Hermes/Claude Code, FEE-Agent als eigenständiges Programm.

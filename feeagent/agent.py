@@ -9,6 +9,9 @@ import re
 import urllib.request
 from pathlib import Path
 
+from . import graph as fee_graph
+from . import memory as fee_memory
+
 BASE = Path(__file__).resolve().parent.parent
 SUBAGENTS_DIR = BASE / "subagents"
 MANDATE_DIR = Path(os.environ.get("FEE_MANDATE_DIR", Path.home() / "FEE-Mandate"))
@@ -71,10 +74,24 @@ def llm_chat(endpoint: str, model: str, system: str, user: str,
     return data["choices"][0]["message"]["content"]
 
 
-def run_workflow(question: str, mandate_ctx: str, settings: dict) -> dict:
-    """Führt den 6-Phasen-Workflow aus. Liefert {phases: [{name, output}], final}."""
+def run_workflow(question: str, mandate_ctx: str, settings: dict,
+                 mandate_dir: Path = None) -> dict:
+    """Führt den 6-Phasen-Workflow aus. Liefert {phases: [{name, output}], final}.
+
+    Nutzt Mandats-Memory (frühere Sitzungen) und den Mandats-Wissensgraph
+    (aus Dokumenten extrahierte Normen/Daten/Beträge) als Kontext.
+    """
     phases = []
-    context = f"Mandat-Kontext:\n{mandate_ctx}\n\nNutzer-Anliegen:\n{question}"
+    extra = ""
+    if mandate_dir is not None:
+        mem = fee_memory.context(mandate_dir)
+        if mem:
+            extra += "\n\n" + mem
+        g = fee_graph.build(mandate_dir)
+        gs = fee_graph.summary(g)
+        if "Dokumente:" in gs:
+            extra += "\n\n" + gs
+    context = f"Mandat-Kontext:\n{mandate_ctx}{extra}\n\nNutzer-Anliegen:\n{question}"
 
     for name, instruction in PHASES:
         system = load_soul(name)
@@ -85,6 +102,11 @@ def run_workflow(question: str, mandate_ctx: str, settings: dict) -> dict:
         except Exception as e:  # noqa: BLE001
             out = f"**Subagent '{name}' fehlgeschlagen:** {e}"
         phases.append({"name": name, "output": out})
+        if mandate_dir is not None:
+            try:
+                fee_memory.distill(mandate_dir, name, out)
+            except Exception:  # noqa: BLE001 – Memory darf Workflow nie brechen
+                pass
         context = f"{context}\n\n--- Ergebnis Subagent {name}: ---\n{out}"
 
     final = phases[-1]["output"] if phases else ""

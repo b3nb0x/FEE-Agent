@@ -12,6 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from . import agent
+from . import graph as fee_graph
+from . import headroom
+from . import memory as fee_memory
 from . import ocr
 
 BASE = Path(__file__).resolve().parent.parent
@@ -106,7 +109,12 @@ async def upload_document(slug: str, file: UploadFile = File(...)):
         raise HTTPException(404, "Mandat nicht gefunden")
     tmp = Path("/tmp") / file.filename
     tmp.write_bytes(await file.read())
-    result = ocr.process_document(tmp, p)
+    try:
+        result = headroom.run_heavy(ocr.process_document, tmp, p)
+        if result.get("ok"):
+            fee_graph.save(p)  # Wissensgraph nach neuem Dokument aktualisieren
+    except RuntimeError as e:
+        result = {"ok": False, "fehler": str(e)}
     tmp.unlink(missing_ok=True)
     if not result.get("ok"):
         return JSONResponse(status_code=422, content=result)
@@ -128,8 +136,45 @@ def chat(slug: str, req: ChatRequest):
         for doc in sorted(dok_dir.glob("*.txt"), reverse=True)[:3]:
             ctx += f"\n\n--- Dokument {doc.stem} ---\n" + \
                 doc.read_text(encoding="utf-8", errors="replace")[:6000]
-    result = agent.run_workflow(req.question, ctx, load_config())
+    result = agent.run_workflow(req.question, ctx, load_config(),
+                                mandate_dir=p)
     return result
+
+
+@app.get("/api/mandates/{slug}/graph")
+def mandate_graph(slug: str):
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return fee_graph.save(p)
+
+
+@app.get("/api/mandates/{slug}/memory")
+def mandate_memory(slug: str, q: str = ""):
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    if q:
+        return fee_memory.search(p, q)
+    return fee_memory.all_entries(p)
+
+
+class MemoryAdd(BaseModel):
+    typ: str
+    inhalt: str
+
+
+@app.post("/api/mandates/{slug}/memory")
+def mandate_memory_add(slug: str, m: MemoryAdd):
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return fee_memory.add(p, m.typ, m.inhalt, quelle="gui")
+
+
+@app.get("/api/headroom")
+def headroom_status():
+    return headroom.status()
 
 
 # ------------------------------------------------------------------ GUI
