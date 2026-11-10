@@ -1,6 +1,8 @@
 # FEE-Agent – Der eigenständige juristische Master-Agent
 
-<p align="center"><b>F.E.E. Agent</b> – Master-Agent mit Subagenten, eigenständig lauffähig, mit Web-GUI.</p>
+<p align="center">
+  <img src="assets/banner.jpg" alt="FEE-Agent – Juristischer Master-Agent" width="720">
+</p>
 
 **FEE-Agent** ist ein eigenständiges Programm (kein Hermes, kein Claude Code nötig): Ein Master-Agent orchestriert spezialisierte Subagenten für die juristische Fallbearbeitung – **Analyse, Planung, Recherche, Prüfung, rechtliche Darstellung** – und die Web-GUI verwaltet Mandate, Dokumente und Fristen. Die Wissensbasis (Recherche-Abläufe, Instincts, Security-Regeln) kommt aus dem [F.E.E.-Repo](https://github.com/b3nb0x/F.E.E.).
 
