@@ -8,19 +8,9 @@
 
 ## Architektur
 
-```
-Nutzer ⇄ Web-GUI (localhost:8765)
-              │
-        FastAPI-Server (feeagent/server.py)
-              │
-        Master-Agent (feeagent/agent.py)  ── 6-Phasen-Workflow
-              │ delegiert an Subagenten (subagents/*/SOUL.md)
-   ┌──────────┼──────────┬──────────┬──────────┬──────────┐
- analyse   recherche   planung   pruefung  darstellung  dokumente/mandant
-              │
-        LLM-Endpoint (OpenAI-kompatibel, konfigurierbar)
-        z. B. lokaler llama.cpp-Server: http://localhost:8080/v1
-```
+<p align="center">
+  <img src="assets/architektur.svg" alt="FEE-Agent Architektur: Web-GUI, FastAPI-Server, Master-Agent mit 6-Phasen-Workflow, Subagenten, LLM-Endpoint" width="840">
+</p>
 
 **Der 6-Phasen-Workflow** (siehe `WORKFLOW.md`):
 
