@@ -1,24 +1,16 @@
 # FEE-Agent – Der eigenständige juristische Master-Agent
 
-<p align="center"><b>F.E.E. Agent</b> – Master-Agent mit Subagenten, eigenständig lauffähig, mit Web-GUI.</p>
+<p align="center">
+  <img src="assets/banner.jpg" alt="FEE-Agent – Juristischer Master-Agent" width="720">
+</p>
 
 **FEE-Agent** ist ein eigenständiges Programm (kein Hermes, kein Claude Code nötig): Ein Master-Agent orchestriert spezialisierte Subagenten für die juristische Fallbearbeitung – **Analyse, Planung, Recherche, Prüfung, rechtliche Darstellung** – und die Web-GUI verwaltet Mandate, Dokumente und Fristen. Die Wissensbasis (Recherche-Abläufe, Instincts, Security-Regeln) kommt aus dem [F.E.E.-Repo](https://github.com/b3nb0x/F.E.E.).
 
 ## Architektur
 
-```
-Nutzer ⇄ Web-GUI (localhost:8765)
-              │
-        FastAPI-Server (feeagent/server.py)
-              │
-        Master-Agent (feeagent/agent.py)  ── 6-Phasen-Workflow
-              │ delegiert an Subagenten (subagents/*/SOUL.md)
-   ┌──────────┼──────────┬──────────┬──────────┬──────────┐
- analyse   recherche   planung   pruefung  darstellung  dokumente/mandant
-              │
-        LLM-Endpoint (OpenAI-kompatibel, konfigurierbar)
-        z. B. lokaler llama.cpp-Server: http://localhost:8080/v1
-```
+<p align="center">
+  <img src="assets/architektur.svg" alt="FEE-Agent Architektur: Web-GUI, FastAPI-Server, Master-Agent mit 6-Phasen-Workflow, Subagenten, LLM-Endpoint" width="840">
+</p>
 
 **Der 6-Phasen-Workflow** (siehe `WORKFLOW.md`):
 
