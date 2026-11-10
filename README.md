@@ -47,10 +47,16 @@ Dann im Browser öffnen: **http://localhost:8765**
 
 | Szenario | Endpoint | Modell |
 |---|---|---|
-| Lokal (llama.cpp auf eigener GPU) | `http://localhost:8080/v1` | Name des geladenen Modells |
+| **LM Studio** (lokal, GPU) | `http://localhost:1234/v1` | leer lassen oder Name des geladenen Modells |
+| llama.cpp (lokal) | `http://localhost:8080/v1` | Name des geladenen Modells |
 | Cloud (OpenRouter, Mistral, …) | `https://openrouter.ai/api/v1` | z. B. `mistralai/mistral-large` + API-Key |
 
-llama.cpp lokal starten:
+**LM Studio** (empfohlen für den lokalen Betrieb):
+1. Modell laden (Register „Chat"): bei 6 GB VRAM ein 7–8B-Modell in **Q4_K_M** (z. B. `Meta-Llama-3.1-8B-Instruct` oder `Mistral-7B-Instruct`)
+2. Register **„Developer"** → **„Start Server"** (Standard-Port 1234)
+3. In der FEE-Agent-GUI (Tab „Einstellungen"): Endpoint `http://localhost:1234/v1` eintragen
+
+llama.cpp alternativ:
 ```bash
 ./llama-server -m <modell>.gguf --port 8080
 ```
