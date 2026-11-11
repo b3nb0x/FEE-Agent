@@ -2,3 +2,4 @@ feeagent/config.json
 server.log
 __pycache__/
 .venv/
+feeagent/users.json
