@@ -21,6 +21,8 @@ from . import memory as fee_memory
 from . import netconfig
 from . import ocr
 
+db.init()  # SQLite-DB + Migration alter JSON-Dateien beim Start
+
 BASE = Path(__file__).resolve().parent.parent
 WEB_DIR = BASE / "web"
 # Einstellungen liegen in der SQLite-DB (~/.config/fee-agent/feeagent.db)
