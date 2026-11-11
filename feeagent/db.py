@@ -36,6 +36,9 @@ def init() -> None:
             inhalt TEXT, quelle TEXT);
         CREATE INDEX IF NOT EXISTS idx_memory_mandate ON memory(mandate);
         """)
+    # Einmalige Migration alter JSON-Dateien (werden zu .bak)
+    _import_json_file(DB_PATH.parent / "config.json", "settings", ("key", "value"))
+    _import_json_file(DB_PATH.parent / "users.json", "users", ("name", "role"))
 
 
 def _import_json_file(pfad: Path, tabelle: str, spalten: tuple) -> None:
