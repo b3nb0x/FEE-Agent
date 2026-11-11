@@ -273,6 +273,39 @@ def chat(slug: str, req: ChatRequest):
     return result
 
 
+class MemoryAdd(BaseModel):
+    typ: str
+    inhalt: str
+
+
+@app.post("/api/mandates/{slug}/notes")
+def add_note(slug: str, m: MemoryAdd):
+    """Handnotiz (Telefonat/Gedanke) zum Mandat – in der DB, mit Datum."""
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    if m.typ not in ("telefonat", "notiz", "aufgabe"):
+        raise HTTPException(400, "Typ ungültig (telefonat|notiz|aufgabe)")
+    return fee_memory.add(p, m.typ, m.inhalt, quelle="handnotiz")
+
+
+@app.get("/api/mandates/{slug}/notes")
+def list_notes(slug: str):
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return [e for e in fee_memory.all_entries(p) if e["quelle"] == "handnotiz"]
+
+
+@app.delete("/api/mandates/{slug}/notes/{note_id}")
+def del_note(slug: str, note_id: int):
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    db.delete_note(p, note_id)
+    return {"ok": True}
+
+
 @app.get("/api/mandates/{slug}/graph")
 def mandate_graph(slug: str):
     p = agent.mandate_path(slug)

@@ -142,3 +142,11 @@ def search(mandate_dir: Path, begriff: str, limit: int = 20) -> list:
     hits = [e for e in all_entries(mandate_dir)
             if begriff.lower() in e["inhalt"].lower()]
     return hits[-limit:]
+
+
+def delete_note(mandate_dir: Path, note_id: int) -> None:
+    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
+    init()
+    with conn() as c:
+        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
+                  (note_id, _mandat_key(mandate_dir)))

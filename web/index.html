@@ -107,8 +107,10 @@
           <select id="a-mandate" onchange="loadMandateDetail()"></select></div>
       </div>
       <div class="row">
-        <div><label class="hint">Dokument hochladen (PDF/Word/Excel/Bild → OCR)</label>
-          <input type="file" id="a-file" onchange="uploadDoc()"></div>
+        <div><label class="hint">Dokument hochladen (PDF/Word/Excel/Bild → OCR)
+          <input type="file" id="a-file" onchange="uploadDoc()"></label></div>
+        <div style="flex:0"><label class="hint"><input type="checkbox" id="a-auto" checked>
+          Analyse automatisch starten</label></div>
       </div>
       <div id="a-docinfo" class="hint"></div>
     </div>
@@ -120,6 +122,18 @@
       </div>
       <div class="hint" id="a-status"></div>
       <div class="chatlog" id="a-log"></div>
+    </div>
+    <div class="panel">
+      <h2>Notizen &amp; Telefonate</h2>
+      <div class="row">
+        <div style="flex:0"><select id="n-typ"><option value="telefonat">📞 Telefonat</option>
+            <option value="notiz">💡 Gedanke</option>
+            <option value="aufgabe">📌 Aufgabe</option></select></div>
+        <div><input id="n-text" placeholder="Notiz, z. B.: Telefonat mit Vermieter, Frist verlängert bis 15.03."
+             onkeydown="if(event.key==='Enter')addNote()"></div>
+        <div style="flex:0"><button class="btn" onclick="addNote()">Hinzufügen</button></div>
+      </div>
+      <table><tbody id="n-list"></tbody></table>
     </div>
     <div class="panel">
       <h2>Mandats-Memory</h2>
@@ -300,6 +314,7 @@ async function loadMandateDetail(){
   const s = $('a-mandate').value; if(!s) return;
   const d = await api('/api/mandates/'+s);
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
+  loadNotes();
 }
 
 async function uploadDoc(){
@@ -313,6 +328,39 @@ async function uploadDoc(){
   $('a-docinfo').innerHTML = j.ok
     ? `<span class="ok">✓ ${j.methode}</span> — Original: eingang/, Volltext: ${j.volltext_datei}`
     : `<span class="err">✗ ${j.fehler}</span>`;
+  if (j.ok && $('a-auto').checked) {
+    $('a-question').value = `Analysiere das soeben hochgeladene Dokument "${f.name}" `
+      + 'vollständig nach dem 6-Phasen-Workflow.';
+    runWorkflow();
+  }
+}
+
+async function addNote(){
+  const s = $('a-mandate').value, t = $('n-text').value;
+  if(!s || !t) return;
+  await api(`/api/mandates/${s}/notes`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({typ:$('n-typ').value, inhalt:t})});
+  $('n-text').value = '';
+  loadNotes();
+}
+
+function loadNotes(){
+  const s = $('a-mandate').value; if(!s) return;
+  api(`/api/mandates/${s}/notes`).then(ns => {
+    const icon = {telefonat:'📞', notiz:'💡', aufgabe:'📌'};
+    $('n-list').innerHTML = ns.length ? ns.slice().reverse().map(n =>
+      `<tr><td style="white-space:nowrap">${new Date(n.t*1000).toLocaleDateString('de-DE')}</td>
+       <td>${icon[n.typ]||'•'}</td><td>${n.inhalt.replace(/</g,'&lt;')}</td>
+       <td style="flex:0"><button class="btn small ghost" onclick="delNote(${n.id})">×</button></td></tr>`
+    ).join('') : '<tr><td class="hint">Noch keine Notizen</td></tr>';
+  });
+}
+
+async function delNote(id){
+  const s = $('a-mandate').value;
+  await api(`/api/mandates/${s}/notes/${id}`, {method:'DELETE'});
+  loadNotes();
 }
 
 async function runWorkflow(){
