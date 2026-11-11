@@ -9,7 +9,12 @@ import secrets
 import threading
 from pathlib import Path
 
-USERS_FILE = Path(__file__).resolve().parent / "users.json"
+USERS_FILE = Path.home() / ".config" / "fee-agent" / "users.json"
+# Alte Lage (im Repo) migrieren, falls vorhanden
+_OLD_USERS = Path(__file__).resolve().parent / "users.json"
+if _OLD_USERS.exists():
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _OLD_USERS.rename(USERS_FILE)
 SESSIONS: dict = {}  # token -> {"user", "role"}
 _lock = threading.Lock()
 

@@ -22,7 +22,15 @@ from . import ocr
 
 BASE = Path(__file__).resolve().parent.parent
 WEB_DIR = BASE / "web"
-CONFIG_FILE = BASE / "feeagent" / "config.json"
+# Konfiguration außerhalb des Repos – überlebt git pull / Updates
+CONFIG_DIR = Path.home() / ".config" / "fee-agent"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+# Alte Lage (im Repo) migrieren, falls vorhanden
+_OLD_CONFIG = BASE / "feeagent" / "config.json"
+if _OLD_CONFIG.exists():
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _OLD_CONFIG.rename(CONFIG_FILE)
 
 DEFAULT_CONFIG = {
     "endpoint": "http://localhost:8080/v1",
@@ -190,6 +198,20 @@ def set_settings(s: Settings, request: Request):
 @app.get("/api/mandates")
 def mandates():
     return agent.list_mandates()
+
+
+@app.delete("/api/mandates/{slug}")
+def delete_mandate(slug: str, request: Request):
+    """Mandat archivieren (nach _archiv/), nicht löschen – Rechtsdaten."""
+    require_admin(request)
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    archiv = agent.MANDATE_DIR / "_archiv"
+    archiv.mkdir(exist_ok=True)
+    ziel = archiv / f"{slug}-{int(__import__('time').time())}"
+    p.rename(ziel)
+    return {"ok": True, "archiv": str(ziel)}
 
 
 @app.post("/api/mandates")

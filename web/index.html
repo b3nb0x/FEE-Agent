@@ -269,8 +269,17 @@ async function loadMandates(){
   $('m-list').innerHTML = ms.length ? ms.map(m =>
     `<tr><td>${m.slug}</td><td>${m.status}</td>
      <td class="${m.naechste_frist?'frist':''}">${m.naechste_frist||'–'}</td>
-     <td><button class="btn small ghost" onclick="openArbeit('${m.slug}')">Öffnen</button></td></tr>`
+     <td><button class="btn small ghost" onclick="openArbeit('${m.slug}')">Öffnen</button>
+         ${ME.role==='admin'?`<button class="btn small ghost" onclick="deleteMandate('${m.slug}')">Löschen</button>`:''}</td></tr>`
   ).join('') : '<tr><td colspan="4" class="hint">Noch keine Mandate</td></tr>';
+}
+
+async function deleteMandate(slug){
+  if(!confirm(`Mandat "${slug}" archivieren? (liegt danach in _archiv/)`)) return;
+  const r = await api('/api/mandates/'+slug, {method:'DELETE'});
+  $('m-msg').innerHTML = r.ok ? `<span class="ok">Archiviert: ${r.archiv}</span>`
+    : `<span class="err">Fehler: ${r.detail||'?'}</span>`;
+  loadMandates();
 }
 
 async function createMandate(){
