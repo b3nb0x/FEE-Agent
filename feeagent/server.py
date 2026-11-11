@@ -7,14 +7,16 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from . import agent
+from . import auth
 from . import graph as fee_graph
 from . import headroom
 from . import memory as fee_memory
+from . import netconfig
 from . import ocr
 
 BASE = Path(__file__).resolve().parent.parent
@@ -27,7 +29,33 @@ DEFAULT_CONFIG = {
     "api_key": "",
 }
 
-app = FastAPI(title="F.E.E. Agent", version="0.1.0")
+app = FastAPI(title="F.E.E. Agent", version="0.2.0")
+LAN = netconfig.lan_info()
+
+# Kein Login nötig: GUI (zeigt selbst das Login-Overlay) und Login-Endpunkt
+OFFEN = ("/", "/api/login")
+
+
+@app.middleware("http")
+async def guard(request, call_next):
+    client = request.client.host if request.client else ""
+    if not netconfig.client_allowed(client, LAN["ip"]):
+        return JSONResponse(status_code=403,
+                            content={"detail": "Netzwerk nicht erlaubt"})
+    if request.url.path not in OFFEN:
+        sess = auth.session(request.cookies.get("fee_session", ""))
+        if not sess:
+            return JSONResponse(status_code=401,
+                                content={"detail": "Nicht angemeldet"})
+        request.state.user = sess
+    return await call_next(request)
+
+
+def require_admin(request) -> dict:
+    s = getattr(request.state, "user", None)
+    if not s or s["role"] != "admin":
+        raise HTTPException(403, "Admin-Rechte erforderlich")
+    return s
 
 
 def load_config() -> dict:
@@ -61,13 +89,79 @@ class MandateCreate(BaseModel):
 
 # ------------------------------------------------------------------ API
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserRole(BaseModel):
+    username: str
+    role: str
+
+
+@app.post("/api/login")
+def do_login(l: LoginRequest):
+    sess = auth.login(l.username, l.password)
+    if not sess:
+        raise HTTPException(401, "Anmeldung fehlgeschlagen (PC-Konto prüfen)")
+    resp = JSONResponse(content={"user": sess["user"], "role": sess["role"]})
+    resp.set_cookie("fee_session", sess["token"], httponly=True,
+                    samesite="strict")
+    return resp
+
+
+@app.post("/api/logout")
+def do_logout():
+    # Token steckt im Cookie; Ausloggen = Cookie löschen + Sitzung verwerfen
+    resp = JSONResponse(content={"ok": True})
+    resp.delete_cookie("fee_session")
+    return resp
+
+
+@app.get("/api/me")
+def me(request: Request):
+    return getattr(request.state, "user",
+                   {"user": "", "role": ""})
+
+
+@app.get("/api/users")
+def users_list(request: Request):
+    require_admin(request)
+    return auth.load_users()
+
+
+@app.post("/api/users")
+def users_register(request: Request, u: UserRole):
+    require_admin(request)
+    if not auth.register(u.username, u.role):
+        raise HTTPException(400, "Nutzer/Rolle ungültig")
+    return {"ok": True}
+
+
+@app.post("/api/users/role")
+def users_role(request: Request, u: UserRole):
+    require_admin(request)
+    if not auth.set_role(u.username, u.role):
+        raise HTTPException(404, "Nutzer nicht gefunden")
+    return {"ok": True}
+
+
+@app.post("/api/users/remove")
+def users_remove(request: Request, u: UserRole):
+    require_admin(request)
+    if not auth.remove(u.username):
+        raise HTTPException(404, "Nutzer nicht gefunden")
+    return {"ok": True}
+
+
 @app.get("/api/settings")
 def get_settings():
     return load_config()
 
 
 @app.post("/api/settings")
-def set_settings(s: Settings):
+def set_settings(s: Settings, request: Request):
+    require_admin(request)
     save_config(s.model_dump())
     return {"ok": True}
 
@@ -189,7 +283,9 @@ def index():
 def main():
     import uvicorn
     port = int(os.environ.get("FEE_AGENT_PORT", "8765"))
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    # An alle Interfaces binden – Zugriff regelt die Middleware (Subnetz-Sperre)
+    print(f"GUI im Netzwerk: http://{LAN['ip']}:{port}  (Subnetz {LAN['subnetz']})")
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":

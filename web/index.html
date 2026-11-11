@@ -13,7 +13,11 @@
            align-items:center; gap:14px; flex-wrap:wrap; }
   header h1 { font-size:18px; margin:0; color:var(--gold); }
   header .sub { color:var(--dim); font-size:12px; }
-  nav { margin-left:auto; display:flex; gap:8px; }
+  nav { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .user { color:var(--dim); font-size:12px; }
+  #overlay { position:fixed; inset:0; background:rgba(13,17,23,.92); z-index:10;
+             display:flex; align-items:center; justify-content:center; }
+  #overlay .panel { width:320px; }
   nav button { background:var(--panel); color:var(--text); border:1px solid var(--border);
                border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
   nav button.active { border-color:var(--gold); color:var(--gold); }
@@ -52,11 +56,26 @@
     <div class="sub">Fully Examine Everything – Master-Agent mit Subagenten</div>
   </div>
   <nav>
+    <span class="user" id="who"></span>
     <button id="nav-mandate" class="active" onclick="showTab('mandate')">Mandate</button>
     <button id="nav-arbeit" onclick="showTab('arbeit')">Fallbearbeitung</button>
+    <button id="nav-benutzer" class="hidden" onclick="showTab('benutzer')">Benutzer</button>
     <button id="nav-einst" onclick="showTab('einst')">Einstellungen</button>
+    <button class="btn small" onclick="logout()">Abmelden</button>
   </nav>
 </header>
+
+<div id="overlay" class="hidden">
+  <div class="panel">
+    <h2>Anmeldung (PC-Konto)</h2>
+    <div class="row"><div><input id="l-user" placeholder="Benutzername"></div></div>
+    <div class="row"><div><input id="l-pass" type="password" placeholder="Passwort"
+         onkeydown="if(event.key==='Enter')doLogin()"></div></div>
+    <button class="btn" onclick="doLogin()">Anmelden</button>
+    <span id="l-msg"></span>
+    <div class="hint">Linux-Konto des Rechners. Der erste Login wird Admin.</div>
+  </div>
+</div>
 
 <main>
   <!-- MANDATE -->
@@ -107,6 +126,23 @@
     </div>
   </section>
 
+  <!-- BENUTZER (nur Admin) -->
+  <section id="tab-benutzer" class="hidden">
+    <div class="panel">
+      <h2>Nutzer &amp; Zugriffsrechte</h2>
+      <div class="row">
+        <div><input id="u-name" placeholder="PC-Konto, z. B. mustermann"></div>
+        <div><select id="u-role"><option value="nutzer">nutzer</option>
+             <option value="admin">admin</option></select></div>
+        <div style="flex:0"><button class="btn" onclick="registerUser()">Registrieren</button></div>
+      </div>
+      <div class="hint">Authentifizierung läuft per Linux-PAM: hier werden nur
+        bestehende PC-Konten registriert und Rollen vergeben.</div>
+      <table><thead><tr><th>Konto</th><th>Rolle</th><th></th></tr></thead>
+      <tbody id="u-list"></tbody></table>
+    </div>
+  </section>
+
   <!-- EINSTELLUNGEN -->
   <section id="tab-einst" class="hidden">
     <div class="panel">
@@ -134,16 +170,77 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const api = (p, o) => fetch(p, o).then(r => r.json());
+const api = (p, o) => fetch(p, o).then(r => {
+  if (r.status === 401) { $('overlay').classList.remove('hidden'); throw new Error('401'); }
+  if (r.status === 403) throw new Error('Admin-Rechte erforderlich');
+  return r.json();
+});
+let ME = {user:'', role:''};
 
 function showTab(t){
-  ['mandate','arbeit','einst'].forEach(x=>{
+  ['mandate','arbeit','benutzer','einst'].forEach(x=>{
     $('tab-'+x).classList.toggle('hidden', x!==t);
-    $('nav-'+(x==='mandate'?'mandate':x)).classList.toggle('active', x===t);
+    $('nav-'+x).classList.toggle('active', x===t);
   });
   if(t==='mandate') loadMandates();
   if(t==='arbeit') loadMandateSelect();
+  if(t==='benutzer') loadUsers();
   if(t==='einst') loadSettings();
+}
+
+async function doLogin(){
+  const r = await fetch('/api/login', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:$('l-user').value, password:$('l-pass').value})});
+  const j = await r.json();
+  if(!r.ok){ $('l-msg').innerHTML = '<span class="err">'+(j.detail||'Fehler')+'</span>'; return; }
+  $('l-msg').innerHTML = ''; $('l-pass').value = '';
+  initUser(j);
+}
+
+async function logout(){
+  await fetch('/api/logout', {method:'POST'});
+  ME = {user:'', role:''};
+  $('overlay').classList.remove('hidden');
+}
+
+function initUser(j){
+  ME = j; $('who').textContent = j.user + ' (' + j.role + ')';
+  $('nav-benutzer').classList.toggle('hidden', j.role !== 'admin');
+  $('overlay').classList.add('hidden');
+  showTab('mandate');
+}
+
+async function loadUsers(){
+  const us = await api('/api/users');
+  $('u-list').innerHTML = Object.entries(us).map(([n,u]) =>
+    `<tr><td>${n}</td>
+     <td><select onchange="setRole('${n}', this.value)">
+       <option value="nutzer" ${u.role==='nutzer'?'selected':''}>nutzer</option>
+       <option value="admin" ${u.role==='admin'?'selected':''}>admin</option></select></td>
+     <td><button class="btn small ghost" onclick="removeUser('${n}')">Entfernen</button></td></tr>`
+  ).join('');
+}
+
+async function registerUser(){
+  const r = await api('/api/users', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:$('u-name').value, role:$('u-role').value})});
+  $('u-name').value = '';
+  if(r.ok) loadUsers();
+}
+
+async function setRole(n, role){
+  const r = await api('/api/users/role', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:n, role})});
+  if(r.ok) loadUsers();
+}
+
+async function removeUser(n){
+  const r = await api('/api/users/remove', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:n})});
+  if(r.ok) loadUsers();
 }
 
 async function loadMandates(){
@@ -181,6 +278,7 @@ async function uploadDoc(){
   $('a-docinfo').textContent = 'Verarbeite (OCR/Extraktion) …';
   const fd = new FormData(); fd.append('file', f);
   const r = await fetch(`/api/mandates/${s}/documents`, {method:'POST', body:fd});
+  if(r.status===401){ $('overlay').classList.remove('hidden'); return; }
   const j = await r.json();
   $('a-docinfo').innerHTML = j.ok
     ? `<span class="ok">✓ ${j.methode}</span> — Original: eingang/, Volltext: ${j.volltext_datei}`
@@ -196,6 +294,7 @@ async function runWorkflow(){
   const r = await fetch(`/api/mandates/${s}/chat`, {method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({mandate:s, question:q})});
+  if(r.status===401){ $('overlay').classList.remove('hidden'); return; }
   const j = await r.json();
   let html = (j.phases||[]).map(p=>
     `<div class="phase"><b>Subagent ${p.name}</b> fertig</div>`).join('');
@@ -217,7 +316,8 @@ async function saveSettings(){
   $('s-msg').innerHTML = r.ok ? '<span class="ok">Gespeichert</span>' : '<span class="err">Fehler</span>';
 }
 
-showTab('mandate');
+})();
 </script>
+
 </body>
 </html>
