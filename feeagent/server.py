@@ -277,7 +277,9 @@ def headroom_status():
 
 @app.get("/")
 def index():
-    return FileResponse(WEB_DIR / "index.html")
+    # Browser-Cache sperren: die GUI ändert sich mit jedem Update
+    return FileResponse(WEB_DIR / "index.html",
+                        headers={"Cache-Control": "no-store"})
 
 
 def main():
