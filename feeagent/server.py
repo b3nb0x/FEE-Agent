@@ -5,6 +5,7 @@ GUI:    http://localhost:8765
 """
 import json
 import os
+import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
@@ -157,6 +158,26 @@ def users_remove(request: Request, u: UserRole):
 @app.get("/api/settings")
 def get_settings():
     return load_config()
+
+
+@app.post("/api/models")
+def list_models(request: Request, s: Settings):
+    """Modelle eines OpenAI-kompatiblen Endpoints für die Dropdown-Auswahl."""
+    require_admin(request)
+    url = s.endpoint.rstrip("/") + "/models"
+    headers = {}
+    if s.api_key:
+        headers["Authorization"] = f"Bearer {s.api_key}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode())
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Endpoint nicht erreichbar: {e}")
+    modelle = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+    if not modelle:
+        raise HTTPException(502, "Endpoint lieferte keine Modelle")
+    return modelle
 
 
 @app.post("/api/settings")

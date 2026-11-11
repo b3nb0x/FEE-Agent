@@ -150,8 +150,11 @@
       <h2>Modell-Endpoint (OpenAI-kompatibel)</h2>
       <div class="row"><div><label class="hint">Endpoint (z. B. lokaler llama.cpp: http://localhost:8080/v1)</label>
         <input id="s-endpoint"></div></div>
-      <div class="row"><div><label class="hint">Modell-Name</label>
-        <input id="s-model"></div></div>
+      <div class="row"><div><label class="hint">Modell (nach Endpoint-Eintrag „Modelle laden")</label>
+        <select id="s-model"><option value="">— noch nicht geladen —</option></select></div>
+        <div style="flex:0; align-self:flex-end">
+          <button class="btn ghost" onclick="loadModels()">Modelle laden</button></div>
+      </div>
       <div class="row"><div><label class="hint">API-Key (optional, bei Cloud-Providern)</label>
         <input id="s-key" type="password"></div></div>
       <button class="btn" onclick="saveSettings()">Speichern</button>
@@ -309,7 +312,20 @@ function openArbeit(slug){ showTab('arbeit'); setTimeout(()=>{ $('a-mandate').va
 
 async function loadSettings(){
   const s = await api('/api/settings');
-  $('s-endpoint').value = s.endpoint; $('s-model').value = s.model; $('s-key').value = s.api_key||'';
+  $('s-endpoint').value = s.endpoint; $('s-key').value = s.api_key||'';
+  // gespeichertes Modell als Auswahl anbieten, bis neue Modelle geladen werden
+  $('s-model').innerHTML = `<option value="${s.model}">${s.model} (gespeichert)</option>`;
+}
+
+async function loadModels(){
+  $('s-msg').innerHTML = '<span class="hint">Lade Modelle …</span>';
+  try {
+    const ms = await api('/api/models', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({endpoint:$('s-endpoint').value, model:'', api_key:$('s-key').value})});
+    $('s-model').innerHTML = ms.map(m=>`<option value="${m}">${m}</option>`).join('');
+    $('s-msg').innerHTML = `<span class="ok">${ms.length} Modelle gefunden</span>`;
+  } catch(e){ $('s-msg').innerHTML = '<span class="err">'+e.message+'</span>'; }
 }
 async function saveSettings(){
   const r = await api('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
