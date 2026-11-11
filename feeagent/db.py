@@ -35,6 +35,16 @@ def init() -> None:
             mandate TEXT NOT NULL, t REAL, typ TEXT,
             inhalt TEXT, quelle TEXT);
         CREATE INDEX IF NOT EXISTS idx_memory_mandate ON memory(mandate);
+        CREATE TABLE IF NOT EXISTS fristen(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mandate TEXT NOT NULL, datum TEXT NOT NULL,
+            text TEXT NOT NULL, erledigt INTEGER DEFAULT 0);
+        CREATE INDEX IF NOT EXISTS idx_fristen_mandate ON fristen(mandate, datum);
+        CREATE TABLE IF NOT EXISTS kontakte(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mandate TEXT NOT NULL, rolle TEXT NOT NULL,
+            name TEXT NOT NULL, kontakt TEXT DEFAULT '');
+        CREATE INDEX IF NOT EXISTS idx_kontakte_mandate ON kontakte(mandate);
         """)
     # Einmalige Migration alter JSON-Dateien (werden zu .bak)
     _import_json_file(DB_PATH.parent / "config.json", "settings", ("key", "value"))
@@ -142,6 +152,84 @@ def search(mandate_dir: Path, begriff: str, limit: int = 20) -> list:
     hits = [e for e in all_entries(mandate_dir)
             if begriff.lower() in e["inhalt"].lower()]
     return hits[-limit:]
+
+
+def delete_note(mandate_dir: Path, note_id: int) -> None:
+    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
+    init()
+    with conn() as c:
+        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
+                  (note_id, _mandat_key(mandate_dir)))
+
+
+def delete_note(mandate_dir: Path, note_id: int) -> None:
+    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
+    init()
+    with conn() as c:
+        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
+                  (note_id, _mandat_key(mandate_dir)))
+
+
+# ------------------------------------------------------------------ Fristen
+
+def add_frist(mandate: str, datum: str, text: str) -> dict:
+    init()
+    with conn() as c:
+        cur = c.execute("INSERT INTO fristen(mandate,datum,text,erledigt) "
+                        "VALUES(?,?,?,0)", (mandate, datum, text))
+    return {"id": cur.lastrowid, "mandate": mandate, "datum": datum,
+            "text": text, "erledigt": 0}
+
+
+def fristen(mandate: str) -> list:
+    init()
+    with conn() as c:
+        rows = c.execute("SELECT id,datum,text,erledigt FROM fristen "
+                         "WHERE mandate=? ORDER BY datum", (mandate,)).fetchall()
+    heute = time.strftime("%Y-%m-%d")
+    return [{"id": r[0], "mandate": mandate, "datum": r[1], "text": r[2],
+             "erledigt": r[3], "ueberfaellig": r[1] < heute} for r in rows]
+
+
+def frist_erledigt(fid: int, mandate: str) -> None:
+    with conn() as c:
+        c.execute("UPDATE fristen SET erledigt=1 WHERE id=? AND mandate=?",
+                  (fid, mandate))
+
+
+def delete_note(mandate_dir: Path, note_id: int) -> None:
+    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
+    init()
+    with conn() as c:
+        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
+                  (note_id, _mandat_key(mandate_dir)))
+
+
+# ------------------------------------------------------------------ Kontakte
+
+def kontakte(mandate: str) -> list:
+    """Kontakte eines Mandats (Mandant, Gegner, Gericht, Zeugen)."""
+    init()
+    with conn() as c:
+        return [dict(zip(("id", "mandate", "rolle", "name", "kontakt"), row))
+                for row in c.execute(
+                    "SELECT id,mandate,rolle,name,kontakt FROM kontakte "
+                    "WHERE mandate=? ORDER BY rolle, name", (mandate,))]
+
+
+def kontakt_add(mandate: str, rolle: str, name: str, kontakt: str) -> dict:
+    init()
+    with conn() as c:
+        cur = c.execute("INSERT INTO kontakte(mandate,rolle,name,kontakt) "
+                        "VALUES(?,?,?,?)", (mandate, rolle, name, kontakt))
+    return {"id": cur.lastrowid, "mandate": mandate, "rolle": rolle,
+            "name": name, "kontakt": kontakt}
+
+
+def kontakt_del(kid: int, mandate: str) -> None:
+    with conn() as c:
+        c.execute("DELETE FROM kontakte WHERE id=? AND mandate=?",
+                  (kid, mandate))
 
 
 def delete_note(mandate_dir: Path, note_id: int) -> None:

@@ -297,12 +297,148 @@ def list_notes(slug: str):
     return [e for e in fee_memory.all_entries(p) if e["quelle"] == "handnotiz"]
 
 
+# ------------------------------------------------------------------ Fristen
+
+class Frist(BaseModel):
+    datum: str   # JJJJ-MM-TT
+    text: str
+
+
+@app.get("/api/fristen")
+def alle_fristen_api():
+    """Wiedervorlage: Fristen über alle Mandate, sortiert."""
+    return db.alle_fristen()
+
+
+@app.get("/api/mandates/{slug}/fristen")
+def fristen_liste(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.fristen(slug)
+
+
+@app.post("/api/mandates/{slug}/fristen")
+def frist_neu(slug: str, f: Frist):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", f.datum) or not f.text.strip():
+        raise HTTPException(400, "Datum (JJJJ-MM-TT) und Text erforderlich")
+    return db.add_frist(slug, f.datum, f.text.strip()[:500])
+
+
+@app.post("/api/mandates/{slug}/fristen/{fid}/erledigt")
+def frist_erledigt(slug: str, fid: int):
+    db.frist_erledigt(fid, slug)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ Kontakte
+
+class Kontakt(BaseModel):
+    rolle: str   # mandant|gegner|gericht|zeuge|sonstiges
+    name: str
+    kontakt: str = ""
+
+
+@app.get("/api/mandates/{slug}/kontakte")
+def kontakte_liste(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.kontakte(slug)
+
+
+@app.post("/api/mandates/{slug}/kontakte")
+def kontakt_neu(slug: str, k: Kontakt):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    if k.rolle not in ("mandant", "gegner", "gericht", "zeuge", "sonstiges") \
+            or not k.name.strip():
+        raise HTTPException(400, "Rolle oder Name ungültig")
+    return db.kontakt_add(slug, k.rolle, k.name.strip(), k.kontakt.strip()[:300])
+
+
+@app.delete("/api/mandates/{slug}/kontakte/{kid}")
+def kontakt_weg(slug: str, kid: int):
+    db.kontakt_del(kid, slug)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ Notizen
+
 @app.delete("/api/mandates/{slug}/notes/{note_id}")
 def del_note(slug: str, note_id: int):
     p = agent.mandate_path(slug)
     if not p.exists():
         raise HTTPException(404, "Mandat nicht gefunden")
     db.delete_note(p, note_id)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ Fristen
+
+class Frist(BaseModel):
+    datum: str   # JJJJ-MM-TT
+    text: str
+
+
+@app.get("/api/fristen")
+def alle_fristen_api():
+    """Wiedervorlage: Fristen über alle Mandate, sortiert."""
+    return db.alle_fristen()
+
+
+@app.get("/api/mandates/{slug}/fristen")
+def fristen_liste(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.fristen(slug)
+
+
+@app.post("/api/mandates/{slug}/fristen")
+def frist_neu(slug: str, f: Frist):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", f.datum) or not f.text.strip():
+        raise HTTPException(400, "Datum (JJJJ-MM-TT) und Text erforderlich")
+    return db.add_frist(slug, f.datum, f.text.strip()[:500])
+
+
+@app.post("/api/mandates/{slug}/fristen/{fid}/erledigt")
+def frist_erledigt(slug: str, fid: int):
+    db.frist_erledigt(fid, slug)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ Kontakte
+
+class Kontakt(BaseModel):
+    rolle: str   # mandant|gegner|gericht|zeuge|sonstiges
+    name: str
+    kontakt: str = ""
+
+
+@app.get("/api/mandates/{slug}/kontakte")
+def kontakte_liste(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.kontakte(slug)
+
+
+@app.post("/api/mandates/{slug}/kontakte")
+def kontakt_neu(slug: str, k: Kontakt):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    if k.rolle not in ("mandant", "gegner", "gericht", "zeuge", "sonstiges") \
+            or not k.name.strip():
+        raise HTTPException(400, "Rolle oder Name ungültig")
+    return db.kontakt_add(slug, k.rolle, k.name.strip(), k.kontakt.strip()[:300])
+
+
+@app.delete("/api/mandates/{slug}/kontakte/{kid}")
+def kontakt_weg(slug: str, kid: int):
+    db.kontakt_del(kid, slug)
     return {"ok": True}
 
 
