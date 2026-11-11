@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from . import agent
 from . import auth
+from . import db
 from . import graph as fee_graph
 from . import headroom
 from . import memory as fee_memory
@@ -22,15 +23,8 @@ from . import ocr
 
 BASE = Path(__file__).resolve().parent.parent
 WEB_DIR = BASE / "web"
-# Konfiguration außerhalb des Repos – überlebt git pull / Updates
-CONFIG_DIR = Path.home() / ".config" / "fee-agent"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-# Alte Lage (im Repo) migrieren, falls vorhanden
-_OLD_CONFIG = BASE / "feeagent" / "config.json"
-if _OLD_CONFIG.exists():
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    _OLD_CONFIG.rename(CONFIG_FILE)
+# Einstellungen liegen in der SQLite-DB (~/.config/fee-agent/feeagent.db)
+# – überlebt Updates. Alte config.json wird beim ersten Zugriff importiert.
 
 DEFAULT_CONFIG = {
     "endpoint": "http://localhost:8080/v1",
@@ -38,7 +32,7 @@ DEFAULT_CONFIG = {
     "api_key": "",
 }
 
-app = FastAPI(title="F.E.E. Agent", version="0.2.0")
+app = FastAPI(title="F.E.E. Agent", version="0.3.0")
 LAN = netconfig.lan_info()
 
 # Kein Login nötig: GUI (zeigt selbst das Login-Overlay) und Login-Endpunkt
@@ -68,14 +62,11 @@ def require_admin(request) -> dict:
 
 
 def load_config() -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    if CONFIG_FILE.exists():
-        cfg.update(json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
-    return cfg
+    return db.get_settings(DEFAULT_CONFIG)
 
 
 def save_config(cfg: dict) -> None:
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    db.set_settings(cfg)
 
 
 # ------------------------------------------------------------------ Modelle

@@ -1,53 +1,29 @@
 """FEE-Agent memory – sitzungsübergreifendes Mandats-Gedächtnis.
 
-Vorbild: Hermes memory. Fakten, Fristen und Entscheidungen werden als
-JSONL je Mandat gespeichert; Master und Subagenten lesen/schreiben sie.
+Fakten, Fristen und Entscheidungen liegen in der SQLite-DB (feeagent/db.py);
+der Workflow destilliert Subagenten-Ergebnisse automatisch in Memory-Einträge
+und lädt sie beim nächsten Lauf als Kontext.
 """
-import json
 import re
-import time
-from pathlib import Path
+
+from . import db
 
 
-def _memfile(mandate_dir: Path) -> Path:
-    return mandate_dir / "memory.jsonl"
-
-
-def add(mandate_dir: Path, eintragstyp: str, inhalt: str,
+def add(mandate_dir, eintragstyp: str, inhalt: str,
         quelle: str = "master") -> dict:
     """Fügt einen Memory-Eintrag hinzu (typ: fakt|frist|entscheidung|notiz)."""
-    p = _memfile(mandate_dir)
-    eintrag = {
-        "t": round(time.time(), 2),
-        "typ": eintragstyp,
-        "inhalt": inhalt.strip()[:2000],
-        "quelle": quelle,
-    }
-    with p.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(eintrag, ensure_ascii=False) + "\n")
-    return eintrag
+    return db.add(mandate_dir, eintragstyp, inhalt, quelle)
 
 
-def all_entries(mandate_dir: Path) -> list:
-    p = _memfile(mandate_dir)
-    if not p.exists():
-        return []
-    out = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return out
+def all_entries(mandate_dir) -> list:
+    return db.all_entries(mandate_dir)
 
 
-def search(mandate_dir: Path, begriff: str, limit: int = 20) -> list:
-    rx = re.compile(re.escape(begriff), re.I)
-    hits = [e for e in all_entries(mandate_dir) if rx.search(e["inhalt"])]
-    return hits[-limit:]
+def search(mandate_dir, begriff: str, limit: int = 20) -> list:
+    return db.search(mandate_dir, begriff, limit)
 
 
-def context(mandate_dir: Path, max_chars: int = 3000) -> str:
+def context(mandate_dir, max_chars: int = 3000) -> str:
     """Kompakte Memory-Sicht als Subagenten-Kontext."""
     entries = all_entries(mandate_dir)
     if not entries:
@@ -58,7 +34,7 @@ def context(mandate_dir: Path, max_chars: int = 3000) -> str:
     return "\n".join(lines)[:max_chars]
 
 
-def distill(mandate_dir: Path, phase_name: str, phase_output: str,
+def distill(mandate_dir, phase_name: str, phase_output: str,
             llm_fn=None) -> list:
     """Destilliert ein Subagenten-Ergebnis in Memory-Einträge.
 
