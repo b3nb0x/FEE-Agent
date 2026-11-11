@@ -148,7 +148,24 @@
   <section id="tab-einst" class="hidden">
     <div class="panel">
       <h2>Modell-Endpoint (OpenAI-kompatibel)</h2>
-      <div class="row"><div><label class="hint">Endpoint (z. B. lokaler llama.cpp: http://localhost:8080/v1)</label>
+      <div class="row"><div><label class="hint">Provider</label>
+        <select id="s-provider" onchange="providerChanged()">
+          <option value="lokal">Lokal (eigene IP + Port)</option>
+          <option value="lmstudio">LM Studio (dieser PC)</option>
+          <option value="llamacpp">llama.cpp (dieser PC)</option>
+          <option value="ollama">Ollama (dieser PC)</option>
+          <option value="mistral">Mistral (Cloud)</option>
+          <option value="openai">OpenAI / ChatGPT (Cloud)</option>
+          <option value="anthropic">Claude (Cloud)</option>
+          <option value="openrouter">OpenRouter (Cloud)</option>
+        </select></div></div>
+      <div class="row" id="row-lokal">
+        <div><label class="hint">IP-Adresse (leer = dieser PC)</label>
+          <input id="s-ip" placeholder="z. B. 192.168.1.10" oninput="providerChanged()"></div>
+        <div style="flex:0"><label class="hint">Port</label>
+          <input id="s-port" placeholder="1234" style="width:100px" oninput="providerChanged()"></div>
+      </div>
+      <div class="row"><div><label class="hint">Endpoint (automatisch gesetzt, änderbar)</label>
         <input id="s-endpoint"></div></div>
       <div class="row"><div><label class="hint">Modell (nach Endpoint-Eintrag „Modelle laden")</label>
         <select id="s-model"><option value="">— noch nicht geladen —</option></select></div>
@@ -310,9 +327,41 @@ async function runWorkflow(){
 
 function openArbeit(slug){ showTab('arbeit'); setTimeout(()=>{ $('a-mandate').value=slug; loadMandateDetail(); }, 300); }
 
+const PROVIDER = {
+  lokal:     null,  // aus IP+Port zusammengesetzt
+  lmstudio:  'http://localhost:1234/v1',
+  llamacpp:  'http://localhost:8080/v1',
+  ollama:    'http://localhost:11434/v1',
+  mistral:   'https://api.mistral.ai/v1',
+  openai:    'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1/',  // OpenAI-kompatibler Modus
+  openrouter:'https://openrouter.ai/api/v1',
+};
+
+function providerChanged(){
+  const p = $('s-provider').value;
+  $('row-lokal').classList.toggle('hidden', p !== 'lokal');
+  if (PROVIDER[p]) $('s-endpoint').value = PROVIDER[p];
+  else {
+    const ip = $('s-ip').value.trim() || '127.0.0.1';
+    const port = $('s-port').value.trim() || '1234';
+    $('s-endpoint').value = `http://${ip}:${port}/v1`;
+  }
+}
+
 async function loadSettings(){
   const s = await api('/api/settings');
   $('s-endpoint').value = s.endpoint; $('s-key').value = s.api_key||'';
+  // Provider aus gespeichertem Endpoint erraten
+  const m = s.endpoint.match(/^http:\/\/([^\/:]+):(\d+)\/v1\/?$/);
+  if (m && m[1] !== 'localhost' && m[1] !== '127.0.0.1') {
+    $('s-provider').value = 'lokal'; $('s-ip').value = m[1]; $('s-port').value = m[2];
+  } else {
+    const hit = Object.entries(PROVIDER).find(([k,v]) => v && v.replace(/\/$/,'') === s.endpoint.replace(/\/$/,''));
+    $('s-provider').value = hit ? hit[0] : 'lokal';
+    if (!hit) { $('s-provider').value = 'lokal'; }
+  }
+  providerChanged();
   // gespeichertes Modell als Auswahl anbieten, bis neue Modelle geladen werden
   $('s-model').innerHTML = `<option value="${s.model}">${s.model} (gespeichert)</option>`;
 }
