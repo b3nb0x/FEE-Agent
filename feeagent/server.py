@@ -107,7 +107,9 @@ async def upload_document(slug: str, file: UploadFile = File(...)):
     p = agent.mandate_path(slug)
     if not p.exists():
         raise HTTPException(404, "Mandat nicht gefunden")
-    tmp = Path("/tmp") / file.filename
+    # filename sanitizen: "../../x" darf nicht aus /tmp ausbrechen
+    safe_name = Path(file.filename or "upload").name
+    tmp = Path("/tmp") / safe_name
     tmp.write_bytes(await file.read())
     try:
         result = headroom.run_heavy(ocr.process_document, tmp, p)
