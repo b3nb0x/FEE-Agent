@@ -608,6 +608,9 @@ async function uploadDoc(){
   const j = await r.json();
   $('a-docinfo').innerHTML = j.ok
     ? `<span class="ok">✓ ${j.methode}</span> — Original: eingang/, Volltext: ${j.volltext_datei}`
+      + (j.anhaenge && j.anhaenge.length
+         ? `<br>📎 Anhänge: ${j.anhaenge.map(a=>a.datei.split('/').pop()+' ('+a.methode+')').join(', ')}`
+         : '')
     : `<span class="err">✗ ${j.fehler}</span>`;
   if (j.ok && $('a-auto').checked) {
     $('a-question').value = `Analysiere das soeben hochgeladene Dokument "${f.name}" `

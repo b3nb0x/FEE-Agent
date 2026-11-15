@@ -77,7 +77,52 @@ def _email_import(src: Path, out_txt: Path) -> None:
                 break
     else:
         body = msg.get_content()
+    # verschachtelte E-Mails: Body kann base64-kodiert ankommen → dekodieren
+    import base64
+    b = body.strip()
+    if b and "\n" in b and not b.startswith(("Von:", "An:")):
+        try:
+            dekodiert = base64.b64decode("".join(b.split()), validate=True).decode("utf-8")
+            if sum(c.isprintable() or c in "\n\r\t" for c in dekodiert) / max(len(dekodiert), 1) > 0.9:
+                body = dekodiert
+                if body.startswith(("Subject:", "From:")):
+                    # dekodiert = komplette innere E-Mail → sauber neu parsen
+                    inner_msg = email.message_from_string(body, policy=policy.default)
+                    kopf = (f"Von: {inner_msg.get('From','')}\nAn: {inner_msg.get('To','')}\n"
+                            f"Datum: {inner_msg.get('Date','')}"
+                            f"\nBetreff: {inner_msg.get('Subject','')}\n\n")
+                    body = (inner_msg.get_body(preferencelist=("plain",)).get_content()
+                            if not inner_msg.is_multipart() else body)
+        except Exception:  # noqa: BLE001 – dann war es echter Text
+            pass
     out_txt.write_text(kopf + body, encoding="utf-8")
+
+
+def _email_anhaenge(src: Path, eingang: Path) -> list:
+    doc = "Anhänge aus .eml extrahieren (Originale nach eingang/)."
+    import email
+    from email import policy
+    msg = email.message_from_bytes(src.read_bytes(), policy=policy.default)
+    out = []
+    for part in msg.walk():
+        fn = part.get_filename()
+        daten = part.get_payload(decode=True)
+        if not fn:
+            continue
+        if not daten and part.get_content_type() == "message/rfc822":
+            # verschachtelte E-Mail: Payload ist das innere Message-Objekt
+            inner = part.get_payload()
+            daten = (inner[0] if isinstance(inner, list) else inner).as_bytes()
+        if not daten:
+            continue
+        dst = eingang / Path(fn).name
+        i = 1
+        while dst.exists():
+            dst = eingang / f"{Path(fn).stem}_{i}{Path(fn).suffix}"
+            i += 1
+        dst.write_bytes(daten)
+        out.append(dst)
+    return out
 
 
 def process_document(src: Path, mandate_dir: Path) -> dict:
@@ -92,6 +137,7 @@ def process_document(src: Path, mandate_dir: Path) -> dict:
     out_txt = dokumente / (src.stem + ".txt")
     suffix = src.suffix.lower()
     methode = ""
+    anhaenge: list = []
     try:
         if suffix == ".pdf":
             methode = ocr_pdf(src, out_txt)
@@ -105,6 +151,7 @@ def process_document(src: Path, mandate_dir: Path) -> dict:
         elif suffix in (".eml",):
             methode = "E-Mail (.eml)"
             _email_import(src, out_txt)
+            anhaenge = _email_anhaenge(src, eingang)
         elif suffix in (".xls", ".xlsx", ".ods"):
             methode = "LibreOffice (csv)"
             convert_office(src, dokumente)  # bleibt als .csv
@@ -117,5 +164,16 @@ def process_document(src: Path, mandate_dir: Path) -> dict:
     volltext = ""
     if out_txt.exists():
         volltext = out_txt.read_text(encoding="utf-8", errors="replace")[:200000]
+
+    # Anhänge automatisch durch dieselbe Pipeline (Original → eingang/, Text → dokumente/)
+    ergebnisse = [process_document(a, mandate_dir) for a in anhaenge]
+    ok_anh = [r for r in ergebnisse if r.get("ok")]
+
     return {"ok": True, "original": str(dst), "volltext_datei": str(out_txt),
-            "methode": methode, "volltext": volltext}
+            "methode": methode + (f" ({len(ok_anh)} Anhang/Anhänge verarbeitet)"
+                                  if ok_anh else ""),
+            "volltext": volltext,
+            "anhaenge": [{"datei": r["original"], "methode": r["methode"]}
+                         for r in ok_anh],
+            "anhaenge_fehler": [r.get("fehler", "") for r in ergebnisse
+                                if not r.get("ok")]}
