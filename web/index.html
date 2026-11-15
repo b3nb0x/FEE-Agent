@@ -129,6 +129,21 @@
       <div class="chatlog" id="a-log"></div>
     </div>
     <div class="panel">
+      <h2>Zeiterfassung</h2>
+      <div class="row">
+        <div style="flex:0"><input id="z-datum" type="date"></div>
+        <div style="flex:0"><input id="z-min" placeholder="Min." style="width:80px"></div>
+        <div><input id="z-text" placeholder="Tätigkeit, z. B.: Schriftsatz entworfen"
+             onkeydown="if(event.key==='Enter')addZeit()"></div>
+        <div style="flex:0"><button class="btn" onclick="addZeit()">+</button></div>
+      </div>
+      <table><tbody id="z-list"></tbody></table>
+      <div style="margin-top:8px">
+        <button class="btn small ghost" onclick="abrechnen()">Offene Zeiten abrechnen</button>
+        <span id="z-summe" class="hint"></span>
+      </div>
+    </div>
+    <div class="panel">
       <h2>Kontakte</h2>
       <div class="row">
         <div style="flex:0"><select id="k-rolle">
@@ -343,7 +358,45 @@ async function loadMandateDetail(){
   const s = $('a-mandate').value; if(!s) return;
   const d = await api('/api/mandates/'+s);
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
-  loadNotes(); loadFristen(); loadKontakte();
+  loadNotes(); loadFristen(); loadKontakte(); loadZeiten();
+}
+
+async function loadZeiten(){
+  const s = $('a-mandate').value; if(!s) return;
+  const z = await api(`/api/mandates/${s}/zeiten`);
+  $('z-list').innerHTML = z.eintraege.length ? z.eintraege.map(e =>
+    `<tr><td>${e.datum}</td><td class="hint">${e.minuten} Min.</td>
+     <td>${e.text.replace(/</g,'&lt;')}</td>
+     <td style="flex:0">${e.abgerechnet?'<span class="ok">abgerechnet</span>'
+       :`<button class="btn small ghost" onclick="delZeit(${e.id})">×</button>`}</td></tr>`
+  ).join('') : '<tr><td class="hint">Noch keine Zeiten</td></tr>';
+  $('z-summe').textContent =
+    `Offen: ${(z.summe.offen_min/60).toFixed(1).replace('.',',')} h · `
+    + `Abgerechnet: ${(z.summe.abgerechnet_min/60).toFixed(1).replace('.',',')} h`;
+}
+
+async function addZeit(){
+  const s = $('a-mandate').value, d = $('z-datum').value,
+        m = parseInt($('z-min').value), t = $('z-text').value;
+  if(!s || !d || !m || !t) return;
+  const r = await api(`/api/${'mandates'}/${s}/zeiten`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({datum:d, minuten:m, text:t})});
+  if(r.detail){ alert(r.detail); return; }
+  $('z-min').value = ''; $('z-text').value = ''; loadZeiten();
+}
+
+async function delZeit(id){
+  const s = $('a-mandate').value;
+  await api(`/api/mandates/${s}/zeiten/${id}`, {method:'DELETE'});
+  loadZeiten();
+}
+
+async function abrechnen(){
+  const s = $('a-mandate').value;
+  if(!confirm('Alle offenen Zeiten als abgerechnet markieren?')) return;
+  const r = await api(`/api/mandates/${s}/zeiten/abrechnen`, {method:'POST'});
+  if(r.ok) loadZeiten();
 }
 
 async function loadFristen(){

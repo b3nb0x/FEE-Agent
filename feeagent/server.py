@@ -510,3 +510,42 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ------------------------------------------------------------------ Zeiten
+
+class Zeit(BaseModel):
+    datum: str   # JJJJ-MM-TT
+    minuten: int
+    text: str
+
+
+@app.get("/api/mandates/{slug}/zeiten")
+def zeiten_liste(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return {"eintraege": db.zeiten(slug), "summe": db.zeiten_summe(slug)}
+
+
+@app.post("/api/mandates/{slug}/zeiten")
+def zeit_neu(slug: str, z: Zeit):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", z.datum) or not z.text.strip() \
+            or not (1 <= z.minuten <= 24 * 60):
+        raise HTTPException(400, "Datum (JJJJ-MM-TT), Minuten (1-1440) und Text erforderlich")
+    return db.zeit_add(slug, z.datum, z.minuten, z.text.strip()[:500])
+
+
+@app.delete("/api/mandates/{slug}/zeiten/{zid}")
+def zeit_weg(slug: str, zid: int):
+    db.zeit_del(zid, slug)
+    return {"ok": True}
+
+
+@app.post("/api/mandates/{slug}/zeiten/abrechnen")
+def zeiten_abrechnen(slug: str):
+    """Alle offenen Zeiten als abgerechnet markieren (Rechnungsvorbereitung)."""
+    n = db.zeiten_abrechnen(slug)
+    return {"ok": True, "abgerechnet": n, "summe": db.zeiten_summe(slug)}

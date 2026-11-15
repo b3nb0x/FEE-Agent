@@ -45,6 +45,12 @@ def init() -> None:
             mandate TEXT NOT NULL, rolle TEXT NOT NULL,
             name TEXT NOT NULL, kontakt TEXT DEFAULT '');
         CREATE INDEX IF NOT EXISTS idx_kontakte_mandate ON kontakte(mandate);
+        CREATE TABLE IF NOT EXISTS zeiten(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mandate TEXT NOT NULL, datum TEXT NOT NULL,
+            minuten INTEGER NOT NULL, text TEXT NOT NULL,
+            abgerechnet INTEGER DEFAULT 0);
+        CREATE INDEX IF NOT EXISTS idx_zeiten_mandate ON zeiten(mandate, datum);
         """)
     # Einmalige Migration alter JSON-Dateien (werden zu .bak)
     _import_json_file(DB_PATH.parent / "config.json", "settings", ("key", "value"))
@@ -238,3 +244,49 @@ def delete_note(mandate_dir: Path, note_id: int) -> None:
     with conn() as c:
         c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
                   (note_id, _mandat_key(mandate_dir)))
+
+
+# ------------------------------------------------------------------ Zeiten
+
+def zeiten(mandate: str) -> list:
+    init()
+    with conn() as c:
+        rows = c.execute("SELECT id,datum,minuten,text,abgerechnet FROM zeiten "
+                         "WHERE mandate=? ORDER BY datum, id", (mandate,)).fetchall()
+    return [{"id": r[0], "mandate": mandate, "datum": r[1], "minuten": r[2],
+             "text": r[3], "abgerechnet": r[4]} for r in rows]
+
+
+def zeit_add(mandate: str, datum: str, minuten: int, text: str) -> dict:
+    init()
+    with conn() as c:
+        cur = c.execute("INSERT INTO zeiten(mandate,datum,minuten,text,abgerechnet) "
+                        "VALUES(?,?,?,?,0)", (mandate, datum, minuten, text))
+    return {"id": cur.lastrowid, "mandate": mandate, "datum": datum,
+            "minuten": minuten, "text": text, "abgerechnet": 0}
+
+
+def zeit_del(zid: int, mandate: str) -> None:
+    with conn() as c:
+        c.execute("DELETE FROM zeiten WHERE id=? AND mandate=? AND abgerechnet=0",
+                  (zid, mandate))
+
+
+def zeiten_summe(mandate: str) -> dict:
+    """Offene und abgerechnete Minuten des Mandats."""
+    init()
+    with conn() as c:
+        offen = c.execute("SELECT COALESCE(SUM(minuten),0) FROM zeiten "
+                          "WHERE mandate=? AND abgerechnet=0", (mandate,)).fetchone()[0]
+        abrech = c.execute("SELECT COALESCE(SUM(minuten),0) FROM zeiten "
+                           "WHERE mandate=? AND abgerechnet=1", (mandate,)).fetchone()[0]
+    return {"offen_min": offen, "abgerechnet_min": abrech}
+
+
+def zeiten_abrechnen(mandate: str) -> int:
+    """Alle offenen Zeiten als abgerechnet markieren. Rückgabe: Anzahl."""
+    init()
+    with conn() as c:
+        cur = c.execute("UPDATE zeiten SET abgerechnet=1 "
+                        "WHERE mandate=? AND abgerechnet=0", (mandate,))
+    return cur.rowcount
