@@ -92,6 +92,11 @@
       <div id="m-msg"></div>
     </div>
     <div class="panel">
+      <h2>Wiedervorlage — Fristen über alle Mandate</h2>
+      <table><thead><tr><th>Datum</th><th>Mandat</th><th>Frist</th><th></th></tr></thead>
+      <tbody id="w-list"></tbody></table>
+    </div>
+    <div class="panel">
       <h2>Mandate</h2>
       <table><thead><tr><th>Mandat</th><th>Status</th><th>Nächste Frist</th><th></th></tr></thead>
       <tbody id="m-list"></tbody></table>
@@ -122,6 +127,29 @@
       </div>
       <div class="hint" id="a-status"></div>
       <div class="chatlog" id="a-log"></div>
+    </div>
+    <div class="panel">
+      <h2>Kontakte</h2>
+      <div class="row">
+        <div style="flex:0"><select id="k-rolle">
+          <option value="mandant">Mandant</option><option value="gegner">Gegner</option>
+          <option value="gericht">Gericht</option><option value="zeuge">Zeuge</option>
+          <option value="sonstiges">Sonstiges</option></select></div>
+        <div><input id="k-name" placeholder="Name"></div>
+        <div><input id="k-kontakt" placeholder="Telefon / E-Mail / Anschrift"></div>
+        <div style="flex:0"><button class="btn" onclick="addKontakt()">+</button></div>
+      </div>
+      <table><tbody id="k-list"></tbody></table>
+    </div>
+    <div class="panel">
+      <h2>Fristen &amp; Wiedervorlage</h2>
+      <div class="row">
+        <div style="flex:0"><input id="f-datum" type="date"></div>
+        <div><input id="f-text" placeholder="Frist, z. B.: Klage einreichen (3 Monate)"
+             onkeydown="if(event.key==='Enter')addFrist()"></div>
+        <div style="flex:0"><button class="btn" onclick="addFrist()">Hinzufügen</button></div>
+      </div>
+      <table><tbody id="f-list"></tbody></table>
     </div>
     <div class="panel">
       <h2>Notizen &amp; Telefonate</h2>
@@ -314,7 +342,70 @@ async function loadMandateDetail(){
   const s = $('a-mandate').value; if(!s) return;
   const d = await api('/api/mandates/'+s);
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
-  loadNotes();
+  loadNotes(); loadFristen(); loadKontakte();
+}
+
+async function loadFristen(){
+  const s = $('a-mandate').value; if(!s) return;
+  const fs = await api(`/api/mandates/${s}/fristen`);
+  const offen = fs.filter(f=>!f.erledigt);
+  $('f-list').innerHTML = offen.length ? offen.map(f =>
+    `<tr class="${f.ueberfaellig?'frist':''}"><td>${f.datum}</td>
+     <td>${f.ueberfaellig?'⚠️ ':''}${f.text.replace(/</g,'&lt;')}</td>
+     <td style="flex:0"><button class="btn small ghost" onclick="fristOk(${f.id})">✓</button></td></tr>`
+  ).join('') : '<tr><td class="hint">Keine offenen Fristen</td></tr>';
+}
+
+async function addFrist(){
+  const s = $('a-mandate').value, d = $('f-datum').value, t = $('f-text').value;
+  if(!s || !d || !t) return;
+  const r = await api(`/api/mandates/${s}/fristen`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({datum:d, text:t})});
+  if(r.detail){ alert(r.detail); return; }
+  $('f-text').value = ''; loadFristen(); loadWiedervorlage();
+}
+
+async function fristOk(id){
+  const s = $('a-mandate').value;
+  await api(`/api/mandates/${s}/fristen/${id}/erledigt`, {method:'POST'});
+  loadFristen(); loadWiedervorlage();
+}
+
+async function loadWiedervorlage(){
+  const fs = await api('/api/fristen');
+  const offen = fs.filter(f=>!f.erledigt);
+  $('w-list').innerHTML = offen.length ? offen.map(f =>
+    `<tr class="${f.ueberfaellig?'frist':''}"><td>${f.datum}</td><td>${f.mandate}</td>
+     <td>${f.ueberfaellig?'⚠️ ':''}${f.text.replace(/</g,'&lt;')}</td>
+     <td style="flex:0"><button class="btn small ghost" onclick="openArbeit('${f.mandate}')">Öffnen</button></td></tr>`
+  ).join('') : '<tr><td class="hint">Keine offenen Fristen</td></tr>';
+}
+
+async function loadKontakte(){
+  const s = $('a-mandate').value; if(!s) return;
+  const ks = await api(`/api/mandates/${s}/kontakte`);
+  $('k-list').innerHTML = ks.length ? ks.map(k =>
+    `<tr><td><b>${k.rolle}</b></td><td>${k.name.replace(/</g,'&lt;')}</td>
+     <td class="hint">${(k.kontakt||'').replace(/</g,'&lt;')}</td>
+     <td style="flex:0"><button class="btn small ghost" onclick="delKontakt(${k.id})">×</button></td></tr>`
+  ).join('') : '<tr><td class="hint">Noch keine Kontakte</td></tr>';
+}
+
+async function addKontakt(){
+  const s = $('a-mandate').value, n = $('k-name').value;
+  if(!s || !n) return;
+  const r = await api(`/api/mandates/${s}/kontakte`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({rolle:$('k-rolle').value, name:n, kontakt:$('k-kontakt').value})});
+  if(r.detail){ alert(r.detail); return; }
+  $('k-name').value = ''; $('k-kontakt').value = ''; loadKontakte();
+}
+
+async function delKontakt(id){
+  const s = $('a-mandate').value;
+  await api(`/api/mandates/${s}/kontakte/${id}`, {method:'DELETE'});
+  loadKontakte();
 }
 
 async function uploadDoc(){
