@@ -48,7 +48,7 @@ async def guard(request, call_next):
     if not netconfig.client_allowed(client, LAN["ip"]):
         return JSONResponse(status_code=403,
                             content={"detail": "Netzwerk nicht erlaubt"})
-    if request.url.path not in OFFEN:
+    if request.url.path not in OFFEN and not request.url.path.startswith("/portal/"):
         sess = auth.session(request.cookies.get("fee_session", ""))
         if not sess:
             return JSONResponse(status_code=401,
