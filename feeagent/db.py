@@ -51,7 +51,17 @@ def init() -> None:
             minuten INTEGER NOT NULL, text TEXT NOT NULL,
             abgerechnet INTEGER DEFAULT 0);
         CREATE INDEX IF NOT EXISTS idx_zeiten_mandate ON zeiten(mandate, datum);
+        CREATE TABLE IF NOT EXISTS rechnungen(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mandate TEXT NOT NULL, nummer TEXT NOT NULL,
+            datum TEXT NOT NULL, stundensatz REAL NOT NULL,
+            summe_min INTEGER NOT NULL, betrag REAL NOT NULL);
         """)
+    # Migration bestehender DBs: Spalte rechnung_id nachrüsten
+    with conn() as c:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(zeiten)")]
+        if 'rechnung_id' not in cols:
+            c.execute("ALTER TABLE zeiten ADD COLUMN rechnung_id INTEGER")
     # Einmalige Migration alter JSON-Dateien (werden zu .bak)
     _import_json_file(DB_PATH.parent / "config.json", "settings", ("key", "value"))
     _import_json_file(DB_PATH.parent / "users.json", "users", ("name", "role"))
@@ -290,3 +300,58 @@ def zeiten_abrechnen(mandate: str) -> int:
         cur = c.execute("UPDATE zeiten SET abgerechnet=1 "
                         "WHERE mandate=? AND abgerechnet=0", (mandate,))
     return cur.rowcount
+
+
+# ------------------------------------------------------------------ Rechnungen
+
+def rechnung_erstellen(mandate: str, stundensatz: float) -> dict | None:
+    """Rechnung aus abgerechneten, noch nicht fakturierten Zeiten."""
+    init()
+    with conn() as c:
+        rows = c.execute("SELECT id, minuten, text FROM zeiten "
+                         "WHERE mandate=? AND abgerechnet=1 AND rechnung_id IS NULL",
+                         (mandate,)).fetchall()
+        if not rows:
+            return None
+        nummer = "R" + time.strftime("%Y%m%d") + "-" + str(c.execute(
+            "SELECT COUNT(*) FROM rechnungen WHERE mandate=?",
+            (mandate,)).fetchone()[0] + 1)
+        summe_min = sum(r[1] for r in rows)
+        betrag = round(summe_min / 60 * stundensatz, 2)
+        cur = c.execute("INSERT INTO rechnungen(mandate,nummer,datum,stundensatz,"
+                        "summe_min,betrag) VALUES(?,?,?,?,?,?)",
+                        (mandate, nummer, time.strftime("%Y-%m-%d"),
+                         stundensatz, summe_min, betrag))
+        rid = cur.lastrowid
+        c.executemany("UPDATE zeiten SET rechnung_id=? WHERE id=?",
+                      [(rid, r[0]) for r in rows])
+    return {"id": rid, "mandate": mandate, "nummer": nummer,
+            "datum": time.strftime("%Y-%m-%d"), "stundensatz": stundensatz,
+            "summe_min": summe_min, "betrag": betrag,
+            "positionen": [{"text": r[2], "minuten": r[1]} for r in rows]}
+
+
+def rechnungen(mandate: str) -> list:
+    init()
+    with conn() as c:
+        return [dict(zip(("id", "mandate", "nummer", "datum", "stundensatz",
+                          "summe_min", "betrag"), row))
+                for row in c.execute(
+                    "SELECT id,mandate,nummer,datum,stundensatz,summe_min,betrag "
+                    "FROM rechnungen WHERE mandate=? ORDER BY id DESC", (mandate,))]
+
+
+def rechnung(rid: int, mandate: str) -> dict | None:
+    """Rechnung mit Positionen (die zugehörigen Zeiten)."""
+    init()
+    with conn() as c:
+        row = c.execute("SELECT id,mandate,nummer,datum,stundensatz,summe_min,betrag "
+                        "FROM rechnungen WHERE id=? AND mandate=?",
+                        (rid, mandate)).fetchone()
+        if not row:
+            return None
+        pos = c.execute("SELECT datum,minuten,text FROM zeiten "
+                        "WHERE rechnung_id=? ORDER BY datum", (rid,)).fetchall()
+    return {"id": row[0], "mandate": row[1], "nummer": row[2], "datum": row[3],
+            "stundensatz": row[4], "summe_min": row[5], "betrag": row[6],
+            "positionen": [{"datum": p[0], "minuten": p[1], "text": p[2]} for p in pos]}

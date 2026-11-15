@@ -77,6 +77,7 @@ class Settings(BaseModel):
     endpoint: str
     model: str
     api_key: str = ""
+    stundensatz: str = ""   # €/h für Rechnungen
 
 
 class ChatRequest(BaseModel):
@@ -549,3 +550,35 @@ def zeiten_abrechnen(slug: str):
     """Alle offenen Zeiten als abgerechnet markieren (Rechnungsvorbereitung)."""
     n = db.zeiten_abrechnen(slug)
     return {"ok": True, "abgerechnet": n, "summe": db.zeiten_summe(slug)}
+
+
+# ------------------------------------------------------------------ Rechnungen
+
+@app.get("/api/mandates/{slug}/rechnungen")
+def rechnungen_liste(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.rechnungen(slug)
+
+
+@app.post("/api/mandates/{slug}/rechnungen")
+def rechnung_neu(slug: str, request: Request):
+    """Rechnung aus abgerechneten, noch nicht fakturierten Zeiten erstellen."""
+    require_admin(request)
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    stundensatz = float(load_config().get("stundensatz", 0) or 0)
+    if stundensatz <= 0:
+        raise HTTPException(400, "Erst einen Stundensatz in den Einstellungen festlegen")
+    r = db.rechnung_erstellen(slug, stundensatz)
+    if not r:
+        raise HTTPException(400, "Keine offenen (abgerechneten) Zeiten vorhanden")
+    return r
+
+
+@app.get("/api/mandates/{slug}/rechnungen/{rid}")
+def rechnung_detail(slug: str, rid: int):
+    r = db.rechnung(rid, slug)
+    if not r:
+        raise HTTPException(404, "Rechnung nicht gefunden")
+    return r

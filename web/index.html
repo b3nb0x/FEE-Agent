@@ -144,6 +144,18 @@
       </div>
     </div>
     <div class="panel">
+      <h2>Rechnungen</h2>
+      <div class="row">
+        <div style="flex:0"><label class="hint">Stundensatz (€)
+          <input id="r-satz" placeholder="z. B. 120" style="width:100px"></label></div>
+        <div style="align-self:flex-end">
+          <button class="btn" onclick="rechnungErstellen()">Rechnung aus abgerechneten Zeiten</button>
+        </div>
+      </div>
+      <table><tbody id="r-list"></tbody></table>
+      <pre id="r-detail" class="hint" style="white-space:pre-wrap"></pre>
+    </div>
+    <div class="panel">
       <h2>Kontakte</h2>
       <div class="row">
         <div style="flex:0"><select id="k-rolle">
@@ -232,6 +244,8 @@
       </div>
       <div class="row"><div><label class="hint">API-Key (optional, bei Cloud-Providern)</label>
         <input id="s-key" type="password"></div></div>
+      <div class="row"><div><label class="hint">Stundensatz (€/h, für Rechnungen)</label>
+        <input id="s-satz" placeholder="z. B. 120"></div></div>
       <button class="btn" onclick="saveSettings()">Speichern</button>
       <span id="s-msg"></span>
     </div>
@@ -358,7 +372,41 @@ async function loadMandateDetail(){
   const s = $('a-mandate').value; if(!s) return;
   const d = await api('/api/mandates/'+s);
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
-  loadNotes(); loadFristen(); loadKontakte(); loadZeiten();
+  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen();
+}
+
+async function loadRechnungen(){
+  const s = $('a-mandate').value; if(!s) return;
+  const rs = await api(`/api/mandates/${s}/rechnungen`);
+  $('r-list').innerHTML = rs.length ? rs.map(r =>
+    `<tr><td>${r.nummer}</td><td>${r.datum}</td>
+     <td>${(r.summe_min/60).toFixed(1).replace('.',',')} h</td>
+     <td><b>${r.betrag.toFixed(2).replace('.',',')} €</b></td>
+     <td style="flex:0"><button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button></td></tr>`
+  ).join('') : '<tr><td class="hint">Noch keine Rechnungen</td></tr>';
+}
+
+async function zeigeRechnung(id){
+  const s = $('a-mandate').value;
+  const r = await api(`/api/mandates/${s}/rechnungen/${id}`);
+  const pos = r.positionen.map(p =>
+    `  ${p.datum}  ${String(p.minuten).padStart(4)} Min.  ${p.text}`).join('\n');
+  $('r-detail').textContent =
+    `RECHNUNG ${r.nummer} — ${r.datum}\n` +
+    `Stundensatz: ${r.stundensatz.toFixed(2).replace('.',',')} €\n\n${pos}\n\n` +
+    `Summe: ${(r.summe_min/60).toFixed(2).replace('.',',')} h = ${r.betrag.toFixed(2).replace('.',',')} €\n\n` +
+    `(Vorlage, keine Steuerrechnung – RVG/Steuer prüfen)`;
+}
+
+async function rechnungErstellen(){
+  const s = $('a-mandate').value;
+  const satz = parseFloat(($('r-satz').value||'').replace(',','.'));
+  if(!s) return;
+  if(!satz || satz <= 0){ alert('Stundensatz eingeben (z. B. 120)'); return; }
+  const r = await api(`/api/mandates/${s}/rechnungen`, {method:'POST'});
+  if(r.detail){ alert(r.detail); return; }
+  $('r-satz').value = satz;
+  loadRechnungen(); zeigeRechnung(r.id);
 }
 
 async function loadZeiten(){
@@ -554,6 +602,7 @@ function providerChanged(){
 async function loadSettings(){
   const s = await api('/api/settings');
   $('s-endpoint').value = s.endpoint; $('s-key').value = s.api_key||'';
+  $('s-satz').value = s.stundensatz || '';
   // Provider aus gespeichertem Endpoint erraten
   const m = s.endpoint.match(/^http:\/\/([^\/:]+):(\d+)\/v1\/?$/);
   if (m && m[1] !== 'localhost' && m[1] !== '127.0.0.1') {
@@ -593,7 +642,8 @@ async function testVerbindung(){
 }
 async function saveSettings(){
   const r = await api('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({endpoint:$('s-endpoint').value, model:$('s-model').value, api_key:$('s-key').value})});
+    body: JSON.stringify({endpoint:$('s-endpoint').value, model:$('s-model').value,
+      api_key:$('s-key').value, stundensatz:$('s-satz').value})});
   $('s-msg').innerHTML = r.ok ? '<span class="ok">Gespeichert</span>' : '<span class="err">Fehler</span>';
 }
 
