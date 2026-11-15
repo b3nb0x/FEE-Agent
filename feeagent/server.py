@@ -695,3 +695,24 @@ pre{{white-space:pre-wrap;font-size:13px}}</style></head>
 Rechtsberatung im Sinne des RDG. Bei Fristen: bitte umgehend Kontakt aufnehmen.</p>
 </body></html>"""
     return HTMLResponse(html)
+
+
+# ------------------------------------------------------------------ RVG
+
+class RvgRequest(BaseModel):
+    streitwert: float
+    satz: float
+    ust: bool = False
+
+
+@app.post("/api/rvg")
+def rvg_rechnen(r: RvgRequest):
+    """Gebührenrechner nach RVG (Tabelle 1, § 13 RVG)."""
+    from . import rvg as fee_rvg
+    g = fee_rvg.gebuehr(r.streitwert, r.satz)
+    if not g:
+        raise HTTPException(400, "Streitwert muss zwischen 1 und 5.000.000 € liegen "
+                                 "(darüber: manuell nach § 13 Abs. 3 RVG)")
+    if r.ust:
+        g["betrag_inkl_ust"] = round(g["betrag"] * 1.19, 2)
+    return g

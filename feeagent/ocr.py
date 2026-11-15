@@ -62,6 +62,24 @@ def convert_office(doc: Path, outdir: Path) -> Path:
     return produced
 
 
+def _email_import(src: Path, out_txt: Path) -> None:
+    """E-Mail (.eml) → Text: Kopf (Von/An/Datum/Betreff) + Body."""
+    import email
+    from email import policy
+    msg = email.message_from_bytes(src.read_bytes(), policy=policy.default)
+    kopf = (f"Von: {msg.get('From','')}\nAn: {msg.get('To','')}\n"
+            f"Datum: {msg.get('Date','')}\nBetreff: {msg.get('Subject','')}\n\n")
+    body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain":
+                body = part.get_content()
+                break
+    else:
+        body = msg.get_content()
+    out_txt.write_text(kopf + body, encoding="utf-8")
+
+
 def process_document(src: Path, mandate_dir: Path) -> dict:
     """Nimmt ein Dokument ins Mandat auf: Original → eingang/, Volltext → dokumente/."""
     eingang = mandate_dir / "eingang"
@@ -84,6 +102,9 @@ def process_document(src: Path, mandate_dir: Path) -> dict:
             produced = convert_office(src, dokumente)
             if produced != out_txt:
                 shutil.move(str(produced), str(out_txt))
+        elif suffix in (".eml",):
+            methode = "E-Mail (.eml)"
+            _email_import(src, out_txt)
         elif suffix in (".xls", ".xlsx", ".ods"):
             methode = "LibreOffice (csv)"
             convert_office(src, dokumente)  # bleibt als .csv

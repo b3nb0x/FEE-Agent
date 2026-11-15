@@ -92,6 +92,23 @@
       <div id="m-msg"></div>
     </div>
     <div class="panel">
+      <h2>RVG-Gebührenrechner (§ 13 RVG)</h2>
+      <div class="row">
+        <div><label class="hint">Streitwert (€)</label><input id="rv-wert" placeholder="z. B. 10000"></div>
+        <div><label class="hint">Gebühr</label>
+          <select id="rv-geb">
+            <option value="1.3">Geschäftsgebühr (1,3)</option>
+            <option value="1.0">Einigungsgebühr (1,0)</option>
+            <option value="1.2">Terminsgebühr (1,2)</option>
+            <option value="0.2">Erhöhung Terminsgebühr (0,2)</option>
+            <option value="1.6">Revisionsgebühr (1,6)</option>
+          </select></div>
+        <div style="flex:0;align-self:flex-end"><label class="hint"><input type="checkbox" id="rv-ust"> +19 % USt</label></div>
+        <div style="flex:0;align-self:flex-end"><button class="btn" onclick="rvgBerechnen()">Berechnen</button></div>
+      </div>
+      <div id="rv-erg" class="hint"></div>
+    </div>
+    <div class="panel">
       <h2>Wiedervorlage — Fristen über alle Mandate</h2>
       <table><thead><tr><th>Datum</th><th>Mandat</th><th>Frist</th><th></th></tr></thead>
       <tbody id="w-list"></tbody></table>
@@ -344,6 +361,21 @@ async function removeUser(n){
   const r = await api('/api/users/remove', {method:'POST',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:n})});
   if(r.ok) loadUsers();
+}
+
+async function rvgBerechnen(){
+  const wert = parseFloat(($('rv-wert').value||'').replace(/\./g,'').replace(',','.'));
+  if(!wert){ return; }
+  try {
+    const r = await api('/api/rvg', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({streitwert:wert, satz:parseFloat($('rv-geb').value),
+                            ust:$('rv-ust').checked})});
+    $('rv-erg').innerHTML = `<span class="ok">Gebührenstufe ${r.stufe} € × ${r.satz} = `
+      + `<b>${r.betrag.toFixed(2).replace('.',',')} €</b>`
+      + (r.betrag_inkl_ust ? ` · inkl. 19 % USt: <b>${r.betrag_inkl_ust.toFixed(2).replace('.',',')} €</b>` : '')
+      + `</span> <span class="hint">(RVG-Tabelle, keine Rechtsberatung)</span>`;
+  } catch(e){ $('rv-erg').innerHTML = '<span class="err">'+e.message+'</span>'; }
 }
 
 async function loadMandates(){
