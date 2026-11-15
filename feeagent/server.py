@@ -5,6 +5,7 @@ GUI:    http://localhost:8765
 """
 import json
 import os
+import time
 import urllib.request
 from pathlib import Path
 
@@ -582,3 +583,115 @@ def rechnung_detail(slug: str, rid: int):
     if not r:
         raise HTTPException(404, "Rechnung nicht gefunden")
     return r
+
+
+# ------------------------------------------------------------------ Vorlagen
+
+class Vorlage(BaseModel):
+    name: str
+    text: str
+
+
+@app.get("/api/vorlagen")
+def vorlagen_liste():
+    return db.vorlagen()
+
+
+@app.post("/api/vorlagen")
+def vorlage_speichern_api(request: Request, v: Vorlage):
+    require_admin(request)
+    if not v.name.strip() or not v.text.strip():
+        raise HTTPException(400, "Name und Text erforderlich")
+    db.vorlage_speichern(v.name.strip()[:100], v.text[:5000])
+    return {"ok": True}
+
+
+@app.delete("/api/vorlagen/{name}")
+def vorlage_weg(name: str, request: Request):
+    require_admin(request)
+    db.vorlage_weg(name)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ Druckansicht
+
+@app.get("/api/mandates/{slug}/rechnungen/{rid}/druck")
+def rechnung_druck(slug: str, rid: str):
+    """Druckoptimierte Rechnung (Browser-Druck → PDF speichern)."""
+    r = db.rechnung(int(rid), slug)
+    if not r:
+        raise HTTPException(404, "Rechnung nicht gefunden")
+    pos = "\n".join(
+        f"<tr><td>{p['datum']}</td><td style='text-align:right'>{p['minuten']} Min.</td>"
+        f"<td>{p['text']}</td></tr>" for p in r["positionen"])
+    html = f"""<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
+<title>Rechnung {r['nummer']}</title>
+<style>body{{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#111}}
+h1{{font-size:20px;border-bottom:2px solid #111}} table{{width:100%;border-collapse:collapse;font-size:14px}}
+td,th{{padding:6px;border-bottom:1px solid #ccc;text-align:left}}
+.summe{{font-weight:bold;font-size:16px;border-top:2px solid #111}}
+.hinweis{{color:#666;font-size:12px;margin-top:30px}}</style></head>
+<body onload="window.print()">
+<h1>Rechnung {r['nummer']}</h1>
+<p>Mandat: {r['mandate']} &nbsp;·&nbsp; Datum: {r['datum']} &nbsp;·&nbsp;
+Stundensatz: {r['stundensatz']:.2f} €</p>
+<table><tr><th>Datum</th><th>Zeit</th><th>Leistung</th></tr>{pos}
+<tr class="summe"><td colspan="2">Summe: {r['summe_min']//60} h {r['summe_min']%60} Min.</td>
+<td>{r['betrag']:.2f} €</td></tr></table>
+<p class="hinweis">Vorlage – keine Umsatzsteuerrechnung im Sinne des UStG.
+Bitte steuerlich prüfen lassen.</p>
+</body></html>"""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(html)
+
+
+# ------------------------------------------------------------------ Portal
+
+@app.post("/api/mandates/{slug}/portal")
+def portal_link(request: Request, slug: str):
+    """Portal-Link für ein Mandat erzeugen (Admin)."""
+    require_admin(request)
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    token = db.portal_token(slug)
+    return {"ok": True, "url": f"/portal/{token}"}
+
+
+@app.get("/portal/{token}")
+def portal(token: str):
+    """Read-only Statusseite für den Mandanten (ohne Login)."""
+    from fastapi.responses import HTMLResponse
+    slug = db.portal_mandat(token)
+    if not slug:
+        return HTMLResponse("<h1>Link ungültig</h1>", status_code=404)
+    p = agent.mandate_path(slug)
+    fristen = db.fristen(slug)
+    offen = [f for f in fristen if not f["erledigt"]]
+    notizen = [e for e in fee_memory.all_entries(p) if e["quelle"] == "handnotiz"][-10:]
+    mand = p / "MANDAT.md"
+    sachverhalt = mand.read_text(encoding="utf-8")[:1500] if mand.exists() else ""
+    fr_rows = "".join(
+        f"<tr class='{'ueber' if f['ueberfaellig'] else ''}'><td>{f['datum']}</td>"
+        f"<td>{'⚠️ ' if f['ueberfaellig'] else ''}{f['text']}</td></tr>"
+        for f in offen) or "<tr><td colspan=2>Keine offenen Fristen</td></tr>"
+    no_rows = "".join(
+        f"<li><b>{time.strftime('%d.%m.%Y', time.localtime(n['t']))}:</b> {n['inhalt']}</li>"
+        for n in notizen) or "<li>Keine Notizen</li>"
+    import time as _t
+    html = f"""<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
+<title>Mandat {slug}</title>
+<style>body{{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#111}}
+h1{{font-size:20px;border-bottom:2px solid #111}} h2{{font-size:16px;margin-top:28px}}
+table{{width:100%;border-collapse:collapse;font-size:14px}}
+td,th{{padding:6px;border-bottom:1px solid #ccc;text-align:left}}
+.ueber{{background:#fde8e8}} .hinweis{{color:#666;font-size:12px;margin-top:30px}}
+pre{{white-space:pre-wrap;font-size:13px}}</style></head>
+<body>
+<h1>Mandat: {slug}</h1>
+<h2>Sachverhalt</h2><pre>{sachverhalt}</pre>
+<h2>Offene Fristen</h2><table>{fr_rows}</table>
+<h2>Aktuelle Notizen</h2><ul>{no_rows}</ul>
+<p class="hinweis">Diese Seite zeigt einen Auszug Ihres Mandats und ist keine
+Rechtsberatung im Sinne des RDG. Bei Fristen: bitte umgehend Kontakt aufnehmen.</p>
+</body></html>"""
+    return HTMLResponse(html)

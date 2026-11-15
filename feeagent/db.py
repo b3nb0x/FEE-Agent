@@ -56,6 +56,10 @@ def init() -> None:
             mandate TEXT NOT NULL, nummer TEXT NOT NULL,
             datum TEXT NOT NULL, stundensatz REAL NOT NULL,
             summe_min INTEGER NOT NULL, betrag REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS vorlagen(
+            name TEXT PRIMARY KEY, text TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS portal(
+            mandate TEXT PRIMARY KEY, token TEXT NOT NULL);
         """)
     # Migration bestehender DBs: Spalte rechnung_id nachrüsten
     with conn() as c:
@@ -355,3 +359,51 @@ def rechnung(rid: int, mandate: str) -> dict | None:
     return {"id": row[0], "mandate": row[1], "nummer": row[2], "datum": row[3],
             "stundensatz": row[4], "summe_min": row[5], "betrag": row[6],
             "positionen": [{"datum": p[0], "minuten": p[1], "text": p[2]} for p in pos]}
+
+
+# ------------------------------------------------------------------ Vorlagen
+
+def vorlagen() -> list:
+    """Kanzleiweite Schriftsatz-Vorlagen (Name → Text)."""
+    init()
+    with conn() as c:
+        return [{"name": r[0], "text": r[1]} for r in
+                c.execute("SELECT name, text FROM vorlagen ORDER BY name")]
+
+
+def vorlage_speichern(name: str, text: str) -> None:
+    init()
+    with conn() as c:
+        c.execute("INSERT INTO vorlagen(name,text) VALUES(?,?) "
+                  "ON CONFLICT(name) DO UPDATE SET text=excluded.text",
+                  (name, text))
+
+
+def vorlage_weg(name: str) -> None:
+    with conn() as c:
+        c.execute("DELETE FROM vorlagen WHERE name=?", (name,))
+
+
+# ------------------------------------------------------------------ Portal
+
+def portal_token(mandate: str) -> str:
+    """Portal-Token für ein Mandat holen (oder erzeugen)."""
+    init()
+    import secrets
+    with conn() as c:
+        row = c.execute("SELECT token FROM portal WHERE mandate=?",
+                        (mandate,)).fetchone()
+        if row:
+            return row[0]
+        token = secrets.token_urlsafe(24)
+        c.execute("INSERT INTO portal(mandate,token) VALUES(?,?)", (mandate, token))
+    return token
+
+
+def portal_mandat(token: str) -> str | None:
+    """Mandat zu einem Portal-Token (oder None)."""
+    init()
+    with conn() as c:
+        row = c.execute("SELECT mandate FROM portal WHERE token=?",
+                        (token,)).fetchone()
+    return row[0] if row else None

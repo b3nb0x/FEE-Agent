@@ -129,6 +129,16 @@
       <div class="chatlog" id="a-log"></div>
     </div>
     <div class="panel">
+      <h2>Schriftsatz-Vorlagen</h2>
+      <div class="row">
+        <div style="flex:0"><select id="v-list" onchange="zeigeVorlage()"></select></div>
+        <div style="flex:0"><button class="btn ghost" onclick="vorlageEinfuegen()">In Analyse einfügen</button></div>
+        <div style="flex:0"><button class="btn ghost" onclick="vorlageNeu()">Neu/Speichern</button></div>
+        <div style="flex:0"><button class="btn ghost" onclick="vorlageWeg()">Löschen</button></div>
+      </div>
+      <textarea id="v-text" rows="5" style="width:100%" placeholder="Vorlagentext, z. B. Mahnung: Sehr geehrte Damen und Herren, …"></textarea>
+    </div>
+    <div class="panel">
       <h2>Zeiterfassung</h2>
       <div class="row">
         <div style="flex:0"><input id="z-datum" type="date"></div>
@@ -342,8 +352,15 @@ async function loadMandates(){
     `<tr><td>${m.slug}</td><td>${m.status}</td>
      <td class="${m.naechste_frist?'frist':''}">${m.naechste_frist||'–'}</td>
      <td><button class="btn small ghost" onclick="openArbeit('${m.slug}')">Öffnen</button>
-         ${ME.role==='admin'?`<button class="btn small ghost" onclick="deleteMandate('${m.slug}')">Löschen</button>`:''}</td></tr>`
+         ${ME.role==='admin'?`<button class="btn small ghost" onclick="deleteMandate('${m.slug}')">Löschen</button>
+         <button class="btn small ghost" onclick="portalLink('${m.slug}')">Portal</button>`:''}</td></tr>`
   ).join('') : '<tr><td colspan="4" class="hint">Noch keine Mandate</td></tr>';
+}
+
+async function portalLink(slug){
+  const r = await api(`/api/mandates/${slug}/portal`, {method:'POST'});
+  if(r.ok){ prompt('Portal-Link für den Mandanten (verschicken):', location.origin + r.url); }
+  else alert(r.detail||'Fehler');
 }
 
 async function deleteMandate(slug){
@@ -372,7 +389,45 @@ async function loadMandateDetail(){
   const s = $('a-mandate').value; if(!s) return;
   const d = await api('/api/mandates/'+s);
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
-  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen();
+  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen(); loadVorlagen();
+}
+
+async function loadVorlagen(){
+  const vs = await api('/api/vorlagen');
+  $('v-list').innerHTML = vs.length
+    ? vs.map(v=>`<option value="${v.name}">${v.name}</option>`).join('')
+    : '<option value="">— keine Vorlagen —</option>';
+  zeigeVorlage();
+}
+
+async function zeigeVorlage(){
+  const vs = await api('/api/vorlagen');
+  const v = vs.find(x=>x.name===$('v-list').value);
+  $('v-text').value = v ? v.text : '';
+}
+
+async function vorlageEinfuegen(){
+  const v = $('v-text').value;
+  if(!v) return;
+  $('a-question').value = `Arbeite folgenden Schriftsatz-Entwurf juristisch aus:\n\n${v}`;
+  showTab('arbeit');
+}
+
+async function vorlageNeu(){
+  const name = prompt('Name der Vorlage:');
+  if(!name) return;
+  const r = await api('/api/vorlagen', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, text:$('v-text').value})});
+  if(r.detail){ alert(r.detail); return; }
+  loadVorlagen();
+}
+
+async function vorlageWeg(){
+  const name = $('v-list').value;
+  if(!name || !confirm(`Vorlage "${name}" löschen?`)) return;
+  await api('/api/vorlagen/'+encodeURIComponent(name), {method:'DELETE'});
+  loadVorlagen();
 }
 
 async function loadRechnungen(){
@@ -382,7 +437,8 @@ async function loadRechnungen(){
     `<tr><td>${r.nummer}</td><td>${r.datum}</td>
      <td>${(r.summe_min/60).toFixed(1).replace('.',',')} h</td>
      <td><b>${r.betrag.toFixed(2).replace('.',',')} €</b></td>
-     <td style="flex:0"><button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button></td></tr>`
+     <td style="flex:0"><button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button>
+     <button class="btn small ghost" onclick="window.open('/api/mandates/${s}/rechnungen/${r.id}/druck')">PDF</button></td></tr>`
   ).join('') : '<tr><td class="hint">Noch keine Rechnungen</td></tr>';
 }
 
