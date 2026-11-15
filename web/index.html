@@ -212,7 +212,8 @@
       <div class="row"><div><label class="hint">Modell (nach Endpoint-Eintrag „Modelle laden")</label>
         <select id="s-model"><option value="">— noch nicht geladen —</option></select></div>
         <div style="flex:0; align-self:flex-end">
-          <button class="btn ghost" onclick="loadModels()">Modelle laden</button></div>
+          <button class="btn ghost" onclick="loadModels()">Modelle laden</button>
+          <button class="btn ghost" onclick="testVerbindung()">Verbindung testen</button></div>
       </div>
       <div class="row"><div><label class="hint">API-Key (optional, bei Cloud-Providern)</label>
         <input id="s-key" type="password"></div></div>
@@ -522,6 +523,19 @@ async function loadModels(){
       body: JSON.stringify({endpoint:$('s-endpoint').value, model:'', api_key:$('s-key').value})});
     $('s-model').innerHTML = ms.map(m=>`<option value="${m}">${m}</option>`).join('');
     $('s-msg').innerHTML = `<span class="ok">${ms.length} Modelle gefunden</span>`;
+  } catch(e){ $('s-msg').innerHTML = '<span class="err">'+e.message+'</span>'; }
+}
+
+async function testVerbindung(){
+  $('s-msg').innerHTML = '<span class="hint">Teste Verbindung …</span>';
+  try {
+    const r = await api('/api/test', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({endpoint:$('s-endpoint').value, model:$('s-model').value||'test',
+                            api_key:$('s-key').value})});
+    $('s-msg').innerHTML = r.ok
+      ? `<span class="ok">✓ Verbindung ok — Modell antwortet (${r.antwort})</span>`
+      : `<span class="err">✗ ${r.fehler}</span>`;
   } catch(e){ $('s-msg').innerHTML = '<span class="err">'+e.message+'</span>'; }
 }
 async function saveSettings(){

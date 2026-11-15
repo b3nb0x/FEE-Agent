@@ -161,6 +161,19 @@ def get_settings():
     return load_config()
 
 
+@app.post("/api/test")
+def test_verbindung(request: Request, s: Settings):
+    """Mini-Chat an den Endpoint – zeigt sofort, ob Token/Modell stimmen."""
+    require_admin(request)
+    try:
+        antwort = agent.llm_chat(s.endpoint, s.model or "test",
+                                 "Du bist ein Verbindungstest.",
+                                 "Antworte nur mit: ok", s.api_key, timeout=30)
+        return {"ok": True, "antwort": antwort.strip()[:60]}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "fehler": str(e)[:200]}
+
+
 @app.post("/api/models")
 def list_models(request: Request, s: Settings):
     """Modelle eines OpenAI-kompatiblen Endpoints für die Dropdown-Auswahl."""
