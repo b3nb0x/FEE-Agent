@@ -283,3 +283,14 @@ def test_diktat_ohne_whisper_klare_meldung(client, tmp_path):
     r = client.post("/api/mandates/tf/diktat",
                     files={"file": ("d.wav", f.read_bytes(), "audio/wav")})
     assert r.status_code == 422 and "whisper" in r.json()["fehler"]
+
+
+def test_docker_env_simulation(tmp_path, monkeypatch):
+    """Container-Env: FEE_MANDATE_DIR auf Volume – Server startet, Daten landen dort."""
+    import importlib, os
+    import feeagent.agent as agent
+    monkeypatch.setenv("FEE_MANDATE_DIR", str(tmp_path / "data" / "mandate"))
+    importlib.reload(agent)
+    assert str(agent.MANDATE_DIR) == str(tmp_path / "data" / "mandate")
+    p = agent.create_mandate("nas-test", "NAS Test")
+    assert (tmp_path / "data" / "mandate" / "nas-test" / "MANDAT.md").exists()
