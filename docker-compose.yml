@@ -1,0 +1,36 @@
+# FEE-Agent auf dem NAS – zentrale, selbstbestimmte Kanzlei-IT
+# Daten liegen im Volume ./data (Mandate + SQLite-DB), nicht in irgendeiner Cloud.
+#
+# Starten:   docker compose up -d
+# GUI:       http://<NAS-IP>:8765
+#
+# Optional mit Paperless-ngx (Langzeitarchiv + OCR) – einkommentieren für Kombination.
+
+services:
+  fee-agent:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./data:/data                 # Mandate + feeagent.db + users
+      - ./bea-inbox:/bea-inbox       # beA-Client legt hier ab
+      - ./paperless-consume:/paperless-consume  # Paperless-Übergabe (siehe unten)
+    environment:
+      - FEE_MANDATE_DIR=/data/mandate
+      - FEE_AGENT_PORT=8765
+      # PAM im Container ohne PC-Konten: stattdessen Nur-Token-Login?
+      # Standard: PAM prüft gegen Container-User – für NAS siehe README (Auth-Abschnitt).
+
+  # paperless-ngx (optional): eigenes Dokumentenarchiv mit OCR.
+  # Konsumiert ./paperless-consume, archiviert nach ./paperless.
+  # paperless-ngx:
+  #   image: ghcr.io/paperless-ngx/paperless-ngx:latest
+  #   restart: unless-stopped
+  #   ports: ["8010:8000"]
+  #   volumes:
+  #     - ./paperless/data:/usr/src/paperless/data
+  #     - ./paperless/media:/usr/src/paperless/media
+  #     - ./paperless-consume:/usr/src/paperless/consume
+  #   environment:
+  #     PAPERLESS_URL: http://paperless-ngx:8000

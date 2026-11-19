@@ -907,3 +907,19 @@ async def diktat_api(slug: str, file: UploadFile = File(...)):
         return {"ok": True, "text": text.strip()[:4000]}
     finally:
         tmp.unlink(missing_ok=True)
+
+
+# ------------------------------------------------------------------ Paperless
+
+@app.post("/api/mandates/{slug}/paperless/raus")
+def paperless_raus(slug: str, request: Request):
+    """Neuestes Dokument des Mandats zusätzlich an Paperless-ngx senden."""
+    require_admin(request)
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    from . import paperless
+    docs = sorted((p / "eingang").iterdir()) if (p / "eingang").exists() else []
+    if not docs:
+        raise HTTPException(400, "Keine Dokumente im eingang/-Ordner")
+    return paperless.an_paperless_senden(docs[-1])

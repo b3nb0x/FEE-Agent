@@ -120,3 +120,24 @@ offizielle beA-Client benötigt. FEE-Agent übernimmt die Kanzlei-Seite:
 - **Posteingang:** beA-Client legt Nachrichten in `~/bea-inbox/` ab →
   „Posteingang importieren" liest sie als Dokumente ein (inkl. automatischer
   Fristen- und Aktenzeichen-Erkennung).
+
+## NAS-Betrieb (selbstbestimmt, ohne Cloud) + Paperless-ngx
+
+Alles läuft als Container auf dem NAS – Daten bleiben im Volume `./data`:
+
+```bash
+docker compose up -d          # baut & startet FEE-Agent
+# GUI: http://<NAS-IP>:8765
+```
+
+- Mandate + SQLite-DB liegen in `./data/mandate` bzw. `~/.config` (im Container: `/data`)
+- **Paperless-ngx dazu:** in `docker-compose.yml` den kommentierten
+  `paperless-ngx`-Service einkommentieren. FEE-Agent kann Dokumente per
+  „an Paperless senden" in den Consume-Ordner legen; Paperless macht OCR,
+  Archiv und Volltextsuche.
+- **beA:** beA-Client auf dem NAS legt in `./bea-inbox` ab → in der GUI
+  „Posteingang importieren".
+
+Hinweis Auth: Im Container prüft PAM gegen Container-User. Für reinen
+NAS-Betrieb: Nutzer im Container anlegen (`useradd`) oder lokal ohne
+Docker mit PC-Konten (Standard-Installation).
