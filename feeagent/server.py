@@ -320,11 +320,6 @@ def list_notes(slug: str):
 
 
 
-class Frist(BaseModel):
-    datum: str   # JJJJ-MM-TT
-    text: str
-
-
 class Kontakt(BaseModel):
     rolle: str   # mandant|gegner|gericht|zeuge|sonstiges
     name: str
@@ -345,6 +340,7 @@ def del_note(slug: str, note_id: int):
 class Frist(BaseModel):
     datum: str   # JJJJ-MM-TT
     text: str
+    vorfrist_tage: int = 0
 
 
 @app.get("/api/fristen")
@@ -367,7 +363,8 @@ def frist_neu(slug: str, f: Frist):
     import re as _re
     if not _re.match(r"^\d{4}-\d{2}-\d{2}$", f.datum) or not f.text.strip():
         raise HTTPException(400, "Datum (JJJJ-MM-TT) und Text erforderlich")
-    return db.add_frist(slug, f.datum, f.text.strip()[:500])
+    return db.add_frist_mit_vorfrist(slug, f.datum, f.text.strip()[:500],
+                                     f.vorfrist_tage)
 
 
 @app.post("/api/mandates/{slug}/fristen/{fid}/erledigt")
@@ -377,12 +374,6 @@ def frist_erledigt(slug: str, fid: int):
 
 
 # ------------------------------------------------------------------ Kontakte
-
-class Kontakt(BaseModel):
-    rolle: str   # mandant|gegner|gericht|zeuge|sonstiges
-    name: str
-    kontakt: str = ""
-
 
 @app.get("/api/mandates/{slug}/kontakte")
 def kontakte_liste(slug: str):
@@ -398,7 +389,10 @@ def kontakt_neu(slug: str, k: Kontakt):
     if k.rolle not in ("mandant", "gegner", "gericht", "zeuge", "sonstiges") \
             or not k.name.strip():
         raise HTTPException(400, "Rolle oder Name ungültig")
-    return db.kontakt_add(slug, k.rolle, k.name.strip(), k.kontakt.strip()[:300])
+    r = db.kontakt_add(slug, k.rolle, k.name.strip(), k.kontakt.strip()[:300])
+    if k.rolle == "gegner":
+        r["kollision"] = db.kollisionspruefung(slug, k.name.strip())
+    return r
 
 
 @app.delete("/api/mandates/{slug}/kontakte/{kid}")
@@ -425,12 +419,6 @@ def mandate_memory(slug: str, q: str = ""):
     return fee_memory.all_entries(p)
 
 
-class MemoryAdd(BaseModel):
-    typ: str
-    inhalt: str
-
-
-@app.post("/api/mandates/{slug}/memory")
 def mandate_memory_add(slug: str, m: MemoryAdd):
     p = agent.mandate_path(slug)
     if not p.exists():
@@ -783,3 +771,54 @@ def bea_inbox(slug: str, request: Request):
     if r.get("ok") and r.get("neu"):
         r["fristen_neu"] = fee_fristen.auto_eintragen(p, slug, db)
     return r
+
+
+# ------------------------------------------------------------------ Suche/Export/Kollision
+
+@app.get("/api/suche")
+def suche_api(q: str = ""):
+    """Globale Volltextsuche über alle Mandats-Dokumente + DB-Einträge."""
+    if len(q) < 3:
+        return []
+    import re as _re
+    rx = _re.compile(_re.escape(q), _re.I)
+    treffer = []
+    root = agent.MANDATE_DIR
+    if root.exists():
+        for txt in root.rglob("dokumente/*.txt"):
+            mandate = txt.relative_to(root).parts[0]
+            try:
+                inhalt = txt.read_text(encoding="utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                continue
+            for m in rx.finditer(inhalt):
+                treffer.append({"mandate": mandate, "datei": txt.name,
+                                "kontext": inhalt[max(0, m.start()-80):m.end()+80].replace("\n", " ")})
+                if len(treffer) >= 50:
+                    return treffer
+    return treffer
+
+
+@app.get("/api/export")
+def export_api(request: Request):
+    """Vollständiger Datenexport (offenes Format: JSON + Mandatsordner als ZIP-Pfad)."""
+    require_admin(request)
+    import time as _t
+    with db.conn() as c:
+        daten = {}
+        for t in ("settings", "users", "fristen", "kontakte", "zeiten",
+                  "rechnungen", "vorlagen", "memory", "portal", "termine", "mandate_meta"):
+            try:
+                cols = [r[1] for r in c.execute(f"PRAGMA table_info({t})")]
+                daten[t] = [dict(zip(cols, row)) for row in c.execute(f"SELECT * FROM {t}")]
+            except Exception:  # noqa: BLE001
+                daten[t] = []
+    return {"export_datum": _t.strftime("%Y-%m-%d %H:%M"),
+            "mandatsverzeichnis": str(agent.MANDATE_DIR), "daten": daten}
+
+
+@app.post("/api/mandates/{slug}/kollision")
+def kollision_api(slug: str, request: Request, gegner: str = ""):
+    """Kollisionsprüfung: andere Mandate mit gleichem Gegner."""
+    require_admin(request)
+    return db.kollisionspruefung(slug, gegner)

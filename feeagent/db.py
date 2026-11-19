@@ -474,3 +474,29 @@ def rechnung_zahlstatus(rid: int, mandate: str, status: str, gezahlt_am: str = "
     with conn() as c:
         c.execute("UPDATE rechnungen SET zahlstatus=?, gezahlt_am=? WHERE id=? AND mandate=?",
                   (status, gezahlt_am, rid, mandate))
+
+
+# ------------------------------------------------------------------ Kollision
+
+def kollisionspruefung(mandate: str, gegner_name: str) -> list:
+    """Andere Mandate mit demselben Gegner (Interessenkollision)."""
+    init()
+    with conn() as c:
+        rows = c.execute(
+            "SELECT mandate, name FROM kontakte WHERE rolle='gegner' "
+            "AND mandate<>? AND lower(name) LIKE ?",
+            (mandate, f"%{gegner_name.lower()}%")).fetchall()
+    return [{"mandate": r[0], "gegner": r[1]} for r in rows]
+
+
+# ------------------------------------------------------------------ Vorfristen
+
+def add_frist_mit_vorfrist(mandate: str, datum: str, text: str,
+                           vorfrist_tage: int = 0) -> dict:
+    """Frist anlegen + optional Vorfrist (datum - vorfrist_tage) als Erinnerung."""
+    r = add_frist(mandate, datum, text)
+    if vorfrist_tage > 0 and not r.get("duplikat"):
+        from datetime import date, timedelta
+        d = date.fromisoformat(datum) - timedelta(days=vorfrist_tage)
+        add_frist(mandate, d.isoformat(), f"⏰ Vorfrist ({vorfrist_tage} T. vor): " + text)
+    return r

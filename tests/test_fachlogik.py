@@ -226,3 +226,29 @@ def test_bea_outbox_und_inbox(client, tmp_path, monkeypatch):
 def _mandat_dir(client):
     import feeagent.agent as agent
     return agent.MANDATE_DIR / "tf"
+
+
+def test_kollision_und_vorfrist_und_suche_export(client, tmp_path):
+    _mandat(client, "alt")
+    client.post("/api/mandates/alt/kontakte",
+                json={"rolle": "gegner", "name": "Muster GmbH", "kontakt": ""})
+    _mandat(client, "neu")
+    # Kollision: gleicher Gegner im anderen Mandat
+    r = client.post("/api/mandates/neu/kontakte",
+                    json={"rolle": "gegner", "name": "Muster GmbH"})
+    assert r.json()["kollision"] == [{"mandate": "alt", "gegner": "Muster GmbH"}]
+    # Vorfrist: Frist + 7 Tage vorher automatisch
+    client.post("/api/mandates/neu/fristen",
+                json={"datum": "2027-03-15", "text": "Klage", "vorfrist_tage": 7})
+    fr = {f["datum"] for f in client.get("/api/mandates/neu/fristen").json()}
+    assert "2027-03-15" in fr and "2027-03-08" in fr
+    # Globale Suche über Mandatsdokumente
+    f = tmp_path / "doc.txt"
+    f.write_text("Besonderheit: Schadensersatz 5.000 EUR gefordert")
+    client.post("/api/mandates/neu/documents",
+                files={"file": ("doc.txt", f.read_bytes(), "text/plain")})
+    erg = client.get("/api/suche?q=Schadensersatz").json()
+    assert erg and erg[0]["mandate"] == "neu"
+    # Export enthält alle Tabellen
+    ex = client.get("/api/export").json()
+    assert "fristen" in ex["daten"] and "rechnungen" in ex["daten"]

@@ -14,6 +14,7 @@
   header h1 { font-size:18px; margin:0; color:var(--gold); }
   header .sub { color:var(--dim); font-size:12px; }
   nav { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  #glob-suche { width:220px; font-size:13px; }
   .user { color:var(--dim); font-size:12px; }
   #overlay { position:fixed; inset:0; background:rgba(13,17,23,.92); z-index:10;
              display:flex; align-items:center; justify-content:center; }
@@ -67,6 +68,11 @@
   </div>
   <nav>
     <span class="user" id="who"></span>
+    <input id="glob-suche" placeholder="🔍 Suchen (alle Mandate)…"
+           onkeydown="if(event.key==='Enter')globSuche()">
+    <div id="such-erg" style="position:absolute;top:56px;right:20px;background:var(--panel);
+         border:1px solid var(--border);border-radius:10px;max-width:420px;max-height:50vh;
+         overflow-y:auto;display:none;z-index:20;padding:8px;font-size:12px"></div>
     <button id="nav-mandate" class="active" onclick="showTab('mandate')">Mandate</button>
     <button id="nav-arbeit" onclick="showTab('arbeit')">Fallbearbeitung</button>
     <button id="nav-benutzer" class="hidden" onclick="showTab('benutzer')">Benutzer</button>
@@ -111,6 +117,10 @@
       </div>
       <div class="hint">Ordner: JJJJ-MM-TT_&lt;Slug&gt;_&lt;Name&gt; mit eingang/, dokumente/, notizen/</div>
       <div id="m-msg"></div>
+      <div class="hint" style="margin-top:8px">
+        <button class="btn small ghost" onclick="exportDaten()">💾 Vollständigen Datenexport (JSON)</button>
+        <span class="hint">alle Mandate, Fristen, Zeiten, Rechnungen, Vorlagen – offenes Format</span>
+      </div>
     </div>
     <div class="panel">
       <h2>RVG-Gebührenrechner (§ 13 RVG)</h2>
@@ -239,6 +249,8 @@
         <div style="flex:0"><input id="f-datum" type="date"></div>
         <div><input id="f-text" placeholder="Frist, z. B.: Klage einreichen (3 Monate)"
              onkeydown="if(event.key==='Enter')addFrist()"></div>
+        <div style="flex:0"><label class="hint"><input type="checkbox" id="f-vor" checked>
+          Vorfrist 7 T.</label></div>
         <div style="flex:0"><button class="btn" onclick="addFrist()">Hinzufügen</button></div>
       </div>
       <table><tbody id="f-list"></tbody></table>
@@ -416,6 +428,34 @@ async function rvgBerechnen(){
       + (r.betrag_inkl_ust ? ` · inkl. 19 % USt: <b>${r.betrag_inkl_ust.toFixed(2).replace('.',',')} €</b>` : '')
       + `</span> <span class="hint">(RVG-Tabelle, keine Rechtsberatung)</span>`;
   } catch(e){ $('rv-erg').innerHTML = '<span class="err">'+esc(e.message)+'</span>'; }
+}
+
+async function globSuche(){
+  const q = $('glob-suche').value.trim();
+  const box = $('such-erg');
+  if(q.length < 3){ box.style.display='none'; return; }
+  const erg = await api('/api/suche?q='+encodeURIComponent(q));
+  box.innerHTML = erg.length ? erg.map(t=>
+    `<div style="padding:6px;border-bottom:1px solid var(--border);cursor:pointer"
+      onclick="openArbeit('${t.mandate}')">
+      <b>${esc(t.mandate)}</b> · ${esc(t.datei)}<br>
+      <span class="hint">…${esc(t.kontext)}…</span></div>`).join('')
+    : '<div class="hint">Keine Treffer</div>';
+  box.style.display='block';
+}
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#such-erg') && e.target.id!=='glob-suche')
+    $('such-erg').style.display='none';
+});
+
+async function exportDaten(){
+  const d = await api('/api/export');
+  const blob = new Blob([JSON.stringify(d, null, 1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fee-agent-export-'+d.export_datum.replace(/[: ]/g,'-')+'.json';
+  a.click();
+  $('m-msg').innerHTML = '<span class="ok">Export erstellt (Download) — Mandatsordner: '+esc(d.mandatsverzeichnis)+'</span>';
 }
 
 async function loadMandates(){
@@ -647,9 +687,10 @@ async function loadFristen(){
 async function addFrist(){
   const s = $('a-mandate').value, d = $('f-datum').value, t = $('f-text').value;
   if(!s || !d || !t) return;
+  const vor = $('f-vor').checked ? 7 : 0;
   const r = await api(`/api/mandates/${s}/fristen`, {method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({datum:d, text:t})});
+    body: JSON.stringify({datum:d, text:t, vorfrist_tage:vor})});
   if(r.detail){ alert(r.detail); return; }
   $('f-text').value = ''; loadFristen(); loadWiedervorlage();
 }
