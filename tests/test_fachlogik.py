@@ -252,3 +252,34 @@ def test_kollision_und_vorfrist_und_suche_export(client, tmp_path):
     # Export enthält alle Tabellen
     ex = client.get("/api/export").json()
     assert "fristen" in ex["daten"] and "rechnungen" in ex["daten"]
+
+
+def test_audit_anfrage_xrechnung(client, test_env):
+    # Mandatsanfrage ohne Login (öffentlich, aber LAN-only)
+    r = test_env.post("/api/anfrage", json={"name": "Neu Mandant",
+                        "email": "a@b.de", "anliegen": "Unfallschaden prüfen"})
+    assert r.status_code == 200 and r.json()["slug"].startswith("anfrage-")
+    # Audit dazu geschrieben
+    a = client.get("/api/audit").json()
+    assert any(x["aktion"] == "mandatsanfrage" for x in a)
+    # XRechnung
+    _mandat(client, "tf")
+    client.post("/api/mandates/tf/kontakte", json={"rolle": "mandant", "name": "Mandant X"})
+    client.post("/api/mandates/tf/zeiten", json={"datum": "2026-11-19", "minuten": 60, "text": "t"})
+    client.post("/api/mandates/tf/zeiten/abrechnen")
+    client.post("/api/settings", json={"endpoint": "http://x/v1", "model": "", "api_key": "", "stundensatz": "100"})
+    rid = client.post("/api/mandates/tf/rechnungen").json()["id"]
+    x = client.get(f"/api/mandates/tf/rechnungen/{rid}/xrechnung")
+    assert x.status_code == 200 and "CrossIndustryInvoice" in x.text
+    assert "Mandant X" in x.text
+
+
+def test_diktat_ohne_whisper_klare_meldung(client, tmp_path):
+    import shutil
+    _mandat(client)
+    if shutil.which("whisper"):
+        return  # lokal installiert – dann würde es transkribieren
+    f = tmp_path / "d.wav"; f.write_bytes(b"RIFF" + b"\x00"*100)
+    r = client.post("/api/mandates/tf/diktat",
+                    files={"file": ("d.wav", f.read_bytes(), "audio/wav")})
+    assert r.status_code == 422 and "whisper" in r.json()["fehler"]

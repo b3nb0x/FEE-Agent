@@ -65,6 +65,11 @@ def init() -> None:
             mandate TEXT, datum TEXT NOT NULL, uhrzeit TEXT DEFAULT '',
             titel TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_termine_datum ON termine(datum);
+        CREATE TABLE IF NOT EXISTS audit(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zeit TEXT NOT NULL, user TEXT DEFAULT '', mandate TEXT DEFAULT '',
+            aktion TEXT NOT NULL, detail TEXT DEFAULT '');
+        CREATE INDEX IF NOT EXISTS idx_audit_mandate ON audit(mandate, zeit);
         """)
     # Migration: aktenzeichen + zahlstatus nachrüsten
     with conn() as c:
@@ -500,3 +505,28 @@ def add_frist_mit_vorfrist(mandate: str, datum: str, text: str,
         d = date.fromisoformat(datum) - timedelta(days=vorfrist_tage)
         add_frist(mandate, d.isoformat(), f"⏰ Vorfrist ({vorfrist_tage} T. vor): " + text)
     return r
+
+
+# ------------------------------------------------------------------ Audit-Log
+
+def audit(user: str, aktion: str, mandate: str = "", detail: str = "") -> None:
+    """Änderung protokollieren (revisionssicher)."""
+    init()
+    with conn() as c:
+        c.execute("INSERT INTO audit(zeit,user,mandate,aktion,detail) VALUES(?,?,?,?,?)",
+                  (time.strftime("%Y-%m-%d %H:%M:%S"), user[:50], mandate[:100],
+                   aktion[:100], detail[:500]))
+
+
+def audit_liste(mandate: str = "", limit: int = 100) -> list:
+    init()
+    with conn() as c:
+        if mandate:
+            rows = c.execute("SELECT zeit,user,aktion,detail FROM audit WHERE mandate=? "
+                             "ORDER BY id DESC LIMIT ?", (mandate, limit)).fetchall()
+        else:
+            rows = c.execute("SELECT zeit,user,mandate,aktion,detail FROM audit "
+                             "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    keys = ("zeit", "user", "mandate", "aktion", "detail") if not mandate else \
+           ("zeit", "user", "aktion", "detail")
+    return [dict(zip(keys, r)) for r in rows]

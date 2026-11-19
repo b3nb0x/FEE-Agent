@@ -231,6 +231,16 @@
       <pre id="r-detail" class="hint" style="white-space:pre-wrap"></pre>
     </div>
     <div class="panel">
+      <h2>Diktat &amp; Protokoll</h2>
+      <div class="row">
+        <div><label class="hint">Audio-Diktat (wav/mp3 → Text per whisper)</label>
+          <input type="file" id="d-file" accept="audio/*" onchange="diktat()"></div>
+      </div>
+      <div id="d-msg" class="hint"></div>
+      <h2 style="margin-top:14px">Änderungsprotokoll</h2>
+      <table><tbody id="audit-list"></tbody></table>
+    </div>
+    <div class="panel">
       <h2>Kontakte</h2>
       <div class="row">
         <div style="flex:0"><select id="k-rolle">
@@ -522,7 +532,26 @@ async function loadMandateDetail(){
   const meta = await api(`/api/mandates/${s}/meta`);
   $('a-az').value = meta.aktenzeichen || '';
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
-  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen(); loadVorlagen(); loadBea();
+  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen(); loadVorlagen(); loadBea(); loadAudit();
+}
+
+async function diktat(){
+  const s=$('a-mandate').value, f=$('d-file').files[0]; if(!s||!f) return;
+  $('d-msg').textContent='Transkribiere …';
+  const fd=new FormData(); fd.append('file',f);
+  const r=await fetch(`/api/mandates/${s}/diktat`,{method:'POST',body:fd});
+  const j=await r.json();
+  $('d-msg').innerHTML = j.ok ? '<span class="ok">✓ '+esc(j.text.slice(0,300))+'</span>'
+    : '<span class="err">✗ '+esc(j.fehler||'?')+'</span>';
+}
+
+async function loadAudit(){
+  const s=$('a-mandate').value; if(!s) return;
+  const a=await api(`/api/audit?mandate=${s}`);
+  $('audit-list').innerHTML = a.length ? a.slice(0,15).map(x=>
+    `<tr><td class="hint">${x.zeit}</td><td>${esc(x.user)}</td><td>${esc(x.aktion)}</td>
+     <td class="hint">${esc(x.detail||'')}</td></tr>`).join('')
+    : '<tr><td class="hint">Noch keine Einträge</td></tr>';
 }
 
 async function loadBea(){
@@ -602,7 +631,8 @@ async function loadRechnungen(){
      <td style="flex:0"><button class="btn small ghost" onclick="setZahlung(${r.id},'bezahlt')">✓ bezahlt</button>
      <button class="btn small ghost" onclick="setZahlung(${r.id},'mahnung')">Mahnung</button>
      <button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button>
-     <button class="btn small ghost" onclick="window.open('/api/mandates/${s}/rechnungen/${r.id}/druck')">PDF</button></td></tr>`
+     <button class="btn small ghost" onclick="window.open('/api/mandates/${s}/rechnungen/${r.id}/druck')">PDF</button>
+     <button class="btn small ghost" onclick="window.open('/api/mandates/${s}/rechnungen/${r.id}/xrechnung')">XRechnung</button></td></tr>`
   ).join('') : '<tr><td class="hint">Noch keine Rechnungen</td></tr>';
 }
 

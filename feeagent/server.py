@@ -39,7 +39,7 @@ app = FastAPI(title="F.E.E. Agent", version="0.3.0")
 LAN = netconfig.lan_info()
 
 # Kein Login nötig: GUI (zeigt selbst das Login-Overlay) und Login-Endpunkt
-OFFEN = ("/", "/api/login")
+OFFEN = ("/", "/api/login", "/api/anfrage")
 
 
 @app.middleware("http")
@@ -219,15 +219,44 @@ def delete_mandate(slug: str, request: Request):
     archiv.mkdir(exist_ok=True)
     ziel = archiv / f"{slug}-{int(__import__('time').time())}"
     p.rename(ziel)
+    db.audit(_user(request), "mandat-archivieren", slug, str(ziel))
     return {"ok": True, "archiv": str(ziel)}
 
 
 @app.post("/api/mandates")
-def new_mandate(m: MandateCreate):
+def new_mandate(m: MandateCreate, request: Request):
     if not m.slug:
         raise HTTPException(400, "slug fehlt")
     p = agent.create_mandate(m.slug, m.anzeigename)
+    db.audit(_user(request), "mandat-anlegen", p.name, m.anzeigename)
     return {"ok": True, "slug": p.name, "pfad": str(p)}
+
+
+def _user(request) -> str:
+    return getattr(getattr(request, "state", None), "user", {}).get("user", "?")
+
+
+class Anfrage(BaseModel):
+    name: str
+    email: str = ""
+    telefon: str = ""
+    anliegen: str
+
+
+@app.post("/api/anfrage")
+def mandatsanfrage(a: Anfrage):
+    """Online-Mandatsanfrage (öffentlich, aber nur aus dem LAN) – legt
+    ein Mandat 'anfrage-<ts>' an und speichert das Anliegen als Notiz."""
+    if not a.name.strip() or not a.anliegen.strip() or len(a.anliegen) > 3000:
+        raise HTTPException(400, "Name und Anliegen erforderlich (max. 3000 Zeichen)")
+    import time as _t, re as _re
+    slug = "anfrage-" + _t.strftime("%Y%m%d-%H%M%S")
+    p = agent.create_mandate(slug, a.name.strip()[:100])
+    fee_memory.add(p, "notiz",
+                   f"Mandatsanfrage ({a.email} / {a.telefon}): {a.anliegen.strip()}",
+                   quelle="webformular")
+    db.audit("anfrage", "mandatsanfrage", slug, a.name)
+    return {"ok": True, "slug": slug}
 
 
 @app.get("/api/mandates/{slug}")
@@ -512,6 +541,7 @@ def rechnung_neu(slug: str, request: Request):
     r = db.rechnung_erstellen(slug, stundensatz)
     if not r:
         raise HTTPException(400, "Keine offenen (abgerechneten) Zeiten vorhanden")
+    db.audit(_user(request), "rechnung-erstellen", slug, r["nummer"])
     return r
 
 
@@ -726,6 +756,7 @@ def zahlung_api(slug: str, rid: int, request: Request, status: str = "bezahlt", 
     require_admin(request)
     import time as _t
     db.rechnung_zahlstatus(rid, slug, status, gezahlt_am or _t.strftime("%Y-%m-%d"))
+    db.audit(_user(request), f"zahlung-{status}", slug, f"R{rid}")
     return db.rechnung(rid, slug)
 
 
@@ -822,3 +853,57 @@ def kollision_api(slug: str, request: Request, gegner: str = ""):
     """Kollisionsprüfung: andere Mandate mit gleichem Gegner."""
     require_admin(request)
     return db.kollisionspruefung(slug, gegner)
+
+
+@app.get("/api/audit")
+def audit_api(mandate: str = "", request: Request = None):
+    return db.audit_liste(mandate)
+
+
+# ------------------------------------------------------------------ XRechnung
+
+@app.get("/api/mandates/{slug}/rechnungen/{rid}/xrechnung")
+def xrechnung_api(slug: str, rid: int):
+    """Rechnung als Factur-X XML (E-Rechnung/ZUGFeRD) zum Download."""
+    from fastapi.responses import Response
+    from . import xrechnung
+    r = db.rechnung(int(rid), slug)
+    if not r:
+        raise HTTPException(404, "Rechnung nicht gefunden")
+    k = next((k for k in db.kontakte(slug) if k["rolle"] == "mandant"), {})
+    xml = xrechnung.factur_x(r, {"name": "FEE-Agent Kanzlei"},
+                             {"name": k.get("name", slug)})
+    return Response(xml, media_type="application/xml",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="{r["nummer"]}-factur-x.xml"'})
+
+
+# ------------------------------------------------------------------ Diktat
+
+@app.post("/api/mandates/{slug}/diktat")
+async def diktat_api(slug: str, file: UploadFile = File(...)):
+    """Audio-Diktat transkribieren (whisper CLI, falls installiert)."""
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    import shutil, subprocess, tempfile
+    suffix = Path(file.filename or "diktat").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+        tf.write(await file.read())
+        tmp = Path(tf.name)
+    try:
+        if not shutil.which("whisper"):
+            return JSONResponse(status_code=422, content={
+                "ok": False, "fehler": "whisper nicht installiert – "
+                "pip install openai-whisper oder faster-whisper ins .venv"})
+        r = subprocess.run(["whisper", str(tmp), "--model", "base",
+                            "--language", "de", "--output_format", "txt",
+                            "--output_dir", str(tmp.parent)],
+                           capture_output=True, text=True, timeout=600)
+        out = tmp.with_suffix(".txt")
+        text = out.read_text(encoding="utf-8") if out.exists() else r.stdout
+        fee_memory.add(p, "notiz", "🎙️ Diktat: " + text.strip()[:2000],
+                       quelle="diktat")
+        return {"ok": True, "text": text.strip()[:4000]}
+    finally:
+        tmp.unlink(missing_ok=True)
