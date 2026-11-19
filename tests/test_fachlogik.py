@@ -131,3 +131,31 @@ def test_llm_chat_content_als_liste(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: FakeResp())
     assert agent.llm_chat("http://x/v1", "m", "s", "u") == "ok"
+
+
+def test_fristen_extraktion():
+    from datetime import date
+    from feeagent.fristen import extrahieren
+    t = ("Zahlung bis 15.03.2027. Widerspruch innerhalb von 2 Wochen "
+         "ab Zugang (Zugang: 01.11.2026). Klagefrist: 2026-12-31.")
+    erg = {f["datum"] for f in extrahieren(t, date(2026, 11, 1))}
+    assert "2027-03-15" in erg      # absolut
+    assert "2026-12-31" in erg      # ISO
+    assert "2026-11-15" in erg      # 01.11. + 2 Wochen
+
+
+def test_upload_erstellt_fristen_automatisch(client, tmp_path):
+    _mandat(client)
+    # txt-Dokument mit Frist hochladen
+    f = tmp_path / "brief.txt"
+    f.write_text("Sehr geehrte Damen und Herren, Zahlung bis 15.03.2027 fällig.")
+    r = client.post("/api/mandates/tf/documents",
+                    files={"file": ("brief.txt", f.read_bytes(), "text/plain")})
+    assert r.status_code == 200
+    fr = client.get("/api/mandates/tf/fristen").json()
+    assert any(x["datum"] == "2027-03-15" and "auto:" in x["text"] for x in fr)
+    # Duplikat: derselbe Upload nochmal → keine Doppelung
+    client.post("/api/mandates/tf/documents",
+                files={"file": ("brief.txt", f.read_bytes(), "text/plain")})
+    fr2 = client.get("/api/mandates/tf/fristen").json()
+    assert len([x for x in fr2 if x["datum"] == "2027-03-15"]) == 1

@@ -177,6 +177,13 @@ def search(mandate_dir: Path, begriff: str, limit: int = 20) -> list:
 def add_frist(mandate: str, datum: str, text: str) -> dict:
     init()
     with conn() as c:
+        # Duplikatschutz: gleiche Frist (mandate+datum+textanfang) nicht doppelt
+        alt = c.execute("SELECT id,datum,text,erledigt FROM fristen "
+                        "WHERE mandate=? AND datum=? AND substr(text,1,60)=substr(?,1,60)",
+                        (mandate, datum, text)).fetchone()
+        if alt:
+            return {"id": alt[0], "mandate": mandate, "datum": alt[1],
+                    "text": alt[2], "erledigt": alt[3], "duplikat": True}
         cur = c.execute("INSERT INTO fristen(mandate,datum,text,erledigt) "
                         "VALUES(?,?,?,0)", (mandate, datum, text))
     return {"id": cur.lastrowid, "mandate": mandate, "datum": datum,

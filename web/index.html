@@ -22,7 +22,16 @@
   nav button { background:var(--panel); color:var(--text); border:1px solid var(--border);
                border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
   nav button.active { border-color:var(--gold); color:var(--gold); }
-  main { padding:22px; max-width:1100px; margin:0 auto; }
+  #layout { display:flex; gap:0; }
+  aside { width:280px; min-width:280px; border-right:1px solid var(--border);
+          padding:14px; max-height:calc(100vh - 60px); overflow-y:auto; }
+  aside h3 { font-size:13px; color:var(--gold); margin:14px 0 6px; }
+  aside .todo { font-size:12px; padding:6px 8px; border-bottom:1px solid var(--border);
+                cursor:pointer; border-radius:6px; }
+  aside .todo:hover { background:var(--panel); }
+  aside .todo.ueber { color:var(--red); font-weight:600; }
+  aside .todo .d { color:var(--dim); font-size:11px; }
+  main { padding:22px; flex:1; max-width:1100px; }
   .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px;
            padding:18px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px; font-size:16px; color:var(--gold); }
@@ -78,6 +87,11 @@
   </div>
 </div>
 
+<div id="layout">
+<aside>
+  <h3>📌 ToDo / Wiedervorlage</h3>
+  <div id="todo-list"><div class="hint">lädt …</div></div>
+</aside>
 <main>
   <!-- MANDATE -->
   <section id="tab-mandate">
@@ -287,6 +301,7 @@
     </div>
   </section>
 </main>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -739,7 +754,21 @@ async function saveSettings(){
   $('s-msg').innerHTML = r.ok ? '<span class="ok">Gespeichert</span>' : '<span class="err">Fehler</span>';
 }
 
+async function loadTodo(){
+  try {
+    const fs = await api('/api/fristen');
+    const offen = fs.filter(f=>!f.erledigt).slice(0,15);
+    $('todo-list').innerHTML = offen.length ? offen.map(f=>
+      `<div class="todo ${f.ueberfaellig?'ueber':''}" onclick="openArbeit('${f.mandate}')">
+         <div class="d">${f.datum} · ${f.mandate}</div>
+         ${f.ueberfaellig?'⚠️ ':''}${esc(f.text)}</div>`).join('')
+      : '<div class="hint">Keine offenen Fristen 🎉</div>';
+  } catch(e){ /* nicht eingeloggt */ }
+}
+
 (async () => {
+  loadTodo();
+  setInterval(loadTodo, 30000);
   const r = await fetch('/api/me');
   if (r.ok) initUser(await r.json());
   else document.getElementById('overlay').classList.remove('hidden');

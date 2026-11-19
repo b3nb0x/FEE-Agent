@@ -264,6 +264,19 @@ async def upload_document(slug: str, file: UploadFile = File(...)):
         result = headroom.run_heavy(ocr.process_document, tmp, p)
         if result.get("ok"):
             fee_graph.save(p)  # Wissensgraph nach neuem Dokument aktualisieren
+            # Fristen automatisch aus dem Volltext erkennen und eintragen
+            from . import fristen as fee_fristen
+            from datetime import date as _date
+            vt = p / "dokumente" / (tmp.stem + ".txt")
+            if vt.exists():
+                for f in fee_fristen.extrahieren(
+                        vt.read_text(encoding="utf-8", errors="replace")[:50000],
+                        _date.today()):
+                    try:
+                        db.add_frist(slug, f["datum"],
+                                     "auto: " + f["text"][:450])
+                    except Exception:  # noqa: BLE001 – Duplikate ignorieren
+                        pass
     except RuntimeError as e:
         result = {"ok": False, "fehler": str(e)}
     tmp.unlink(missing_ok=True)
