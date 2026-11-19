@@ -12,21 +12,31 @@ services:
       - ./paperless-consume:/paperless-consume
     environment:
       - FEE_MANDATE_DIR=/data/mandate
+      - FEE_HOST_IP=${FEE_HOST_IP:-}
     depends_on: [paperless-ngx]
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - ./redis:/data
+
   paperless-ngx:
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.14.7
     restart: unless-stopped
     ports: ["8010:8000"]
     volumes:
       - ./paperless/data:/usr/src/paperless/data
       - ./paperless/media:/usr/src/paperless/media
       - ./paperless-consume:/usr/src/paperless/consume
+    environment:
+      - PAPERLESS_REDIS=redis://redis:6379
+    depends_on: [redis]
 
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
-    ports: ["11434:11434"]
+    ports: ["11435:11434"]
     volumes:
       - ./ollama:/root/.ollama
     # Modell ziehen: docker compose -f docker-compose.full.yml exec ollama ollama pull glm-4.7

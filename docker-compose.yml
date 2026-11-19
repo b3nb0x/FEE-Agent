@@ -9,3 +9,4 @@ services:
       - ./bea-inbox:/bea-inbox
     environment:
       - FEE_MANDATE_DIR=/data/mandate
+      - FEE_HOST_IP=${FEE_HOST_IP:-}

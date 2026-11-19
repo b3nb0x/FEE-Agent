@@ -50,3 +50,11 @@ def test_slug_traversal_geblockt(client):
     r = client.post("/api/mandates", json={"slug": "../../tmp/evil", "anzeigename": "x"})
     assert r.json()["ok"]
     assert "/tmp/evil" not in r.json()["pfad"]
+
+
+def test_docker_nat_erlaubt_aber_fremd_nicht(test_env):
+    from feeagent import netconfig as n
+    assert n.client_allowed("172.17.0.1", "10.0.0.119") is True   # Docker-Gateway
+    assert n.client_allowed("10.0.0.51", "10.0.0.119") is True    # LAN
+    assert n.client_allowed("10.9.9.9", "10.0.0.119") is False    # fremd
+    assert n.client_allowed("8.8.8.8", "10.0.0.119") is False     # Internet

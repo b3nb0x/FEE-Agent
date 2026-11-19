@@ -3,3 +3,9 @@ server.log
 __pycache__/
 .venv/
 feeagent/users.json
+data/
+paperless/
+redis/
+ollama/
+bea-inbox/
+*.log
