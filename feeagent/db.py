@@ -174,24 +174,6 @@ def search(mandate_dir: Path, begriff: str, limit: int = 20) -> list:
     return hits[-limit:]
 
 
-def delete_note(mandate_dir: Path, note_id: int) -> None:
-    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
-    init()
-    with conn() as c:
-        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
-                  (note_id, _mandat_key(mandate_dir)))
-
-
-def delete_note(mandate_dir: Path, note_id: int) -> None:
-    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
-    init()
-    with conn() as c:
-        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
-                  (note_id, _mandat_key(mandate_dir)))
-
-
-# ------------------------------------------------------------------ Fristen
-
 def add_frist(mandate: str, datum: str, text: str) -> dict:
     init()
     with conn() as c:
@@ -216,16 +198,6 @@ def frist_erledigt(fid: int, mandate: str) -> None:
         c.execute("UPDATE fristen SET erledigt=1 WHERE id=? AND mandate=?",
                   (fid, mandate))
 
-
-def delete_note(mandate_dir: Path, note_id: int) -> None:
-    """Handnotiz entfernen (nur eigene Handnotizen, keine Workflow-Einträge)."""
-    init()
-    with conn() as c:
-        c.execute("DELETE FROM memory WHERE id=? AND mandate=? AND quelle='handnotiz'",
-                  (note_id, _mandat_key(mandate_dir)))
-
-
-# ------------------------------------------------------------------ Kontakte
 
 def kontakte(mandate: str) -> list:
     """Kontakte eines Mandats (Mandant, Gegner, Gericht, Zeugen)."""
@@ -407,3 +379,14 @@ def portal_mandat(token: str) -> str | None:
         row = c.execute("SELECT mandate FROM portal WHERE token=?",
                         (token,)).fetchone()
     return row[0] if row else None
+
+
+def alle_fristen() -> list:
+    """Wiedervorlage über alle Mandate, sortiert nach Datum."""
+    init()
+    with conn() as c:
+        rows = c.execute("SELECT id,mandate,datum,text,erledigt FROM fristen "
+                         "ORDER BY datum").fetchall()
+    heute = time.strftime("%Y-%m-%d")
+    return [{"id": r[0], "mandate": r[1], "datum": r[2], "text": r[3],
+             "erledigt": r[4], "ueberfaellig": r[2] < heute} for r in rows]

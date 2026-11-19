@@ -252,10 +252,14 @@ async def upload_document(slug: str, file: UploadFile = File(...)):
     p = agent.mandate_path(slug)
     if not p.exists():
         raise HTTPException(404, "Mandat nicht gefunden")
-    # filename sanitizen: "../../x" darf nicht aus /tmp ausbrechen
+    # filename sanitizen: "../../x" darf nicht aus der Temp-Datei ausbrechen
+    # shortcut: tempfile statt /tmp/shared-name, sonst Race bei gleichen Namen
+    import tempfile
     safe_name = Path(file.filename or "upload").name
-    tmp = Path("/tmp") / safe_name
-    tmp.write_bytes(await file.read())
+    with tempfile.NamedTemporaryFile(prefix="fee_", suffix="_" + safe_name,
+                                     delete=False) as tf:
+        tf.write(await file.read())
+        tmp = Path(tf.name)
     try:
         result = headroom.run_heavy(ocr.process_document, tmp, p)
         if result.get("ok"):

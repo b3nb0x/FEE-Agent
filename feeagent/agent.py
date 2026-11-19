@@ -118,6 +118,8 @@ def run_workflow(question: str, mandate_ctx: str, settings: dict,
 # ---------------------------------------------------------------- Mandate
 
 def mandate_path(slug: str) -> Path:
+    # slug gegen Pfad-Traversal härten ("../x" darf nicht raus aus MANDATE_DIR)
+    slug = Path(slug).name
     return MANDATE_DIR / slug
 
 

@@ -290,6 +290,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const api = (p, o) => fetch(p, o).then(r => {
   if (r.status === 401) { $('overlay').classList.remove('hidden'); throw new Error('401'); }
   if (r.status === 403) throw new Error('Admin-Rechte erforderlich');
@@ -313,7 +314,7 @@ async function doLogin(){
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({username:$('l-user').value, password:$('l-pass').value})});
   const j = await r.json();
-  if(!r.ok){ $('l-msg').innerHTML = '<span class="err">'+(j.detail||'Fehler')+'</span>'; return; }
+  if(!r.ok){ $('l-msg').innerHTML = '<span class="err">'+esc(j.detail||'Fehler')+'</span>'; return; }
   $('l-msg').innerHTML = ''; $('l-pass').value = '';
   initUser(j);
 }
@@ -334,7 +335,7 @@ function initUser(j){
 async function loadUsers(){
   const us = await api('/api/users');
   $('u-list').innerHTML = Object.entries(us).map(([n,u]) =>
-    `<tr><td>${n}</td>
+    `<tr><td>${esc(n)}</td>
      <td><select onchange="setRole('${n}', this.value)">
        <option value="nutzer" ${u.role==='nutzer'?'selected':''}>nutzer</option>
        <option value="admin" ${u.role==='admin'?'selected':''}>admin</option></select></td>
@@ -375,13 +376,13 @@ async function rvgBerechnen(){
       + `<b>${r.betrag.toFixed(2).replace('.',',')} €</b>`
       + (r.betrag_inkl_ust ? ` · inkl. 19 % USt: <b>${r.betrag_inkl_ust.toFixed(2).replace('.',',')} €</b>` : '')
       + `</span> <span class="hint">(RVG-Tabelle, keine Rechtsberatung)</span>`;
-  } catch(e){ $('rv-erg').innerHTML = '<span class="err">'+e.message+'</span>'; }
+  } catch(e){ $('rv-erg').innerHTML = '<span class="err">'+esc(e.message)+'</span>'; }
 }
 
 async function loadMandates(){
   const ms = await api('/api/mandates');
   $('m-list').innerHTML = ms.length ? ms.map(m =>
-    `<tr><td>${m.slug}</td><td>${m.status}</td>
+    `<tr><td>${esc(m.slug)}</td><td>${esc(m.status)}</td>
      <td class="${m.naechste_frist?'frist':''}">${m.naechste_frist||'–'}</td>
      <td><button class="btn small ghost" onclick="openArbeit('${m.slug}')">Öffnen</button>
          ${ME.role==='admin'?`<button class="btn small ghost" onclick="deleteMandate('${m.slug}')">Löschen</button>
@@ -413,7 +414,7 @@ async function createMandate(){
 
 async function loadMandateSelect(){
   const ms = await api('/api/mandates');
-  $('a-mandate').innerHTML = ms.map(m=>`<option>${m.slug}</option>`).join('');
+  $('a-mandate').innerHTML = ms.map(m=>`<option>${esc(m.slug)}</option>`).join('');
   loadMandateDetail();
 }
 
@@ -427,7 +428,7 @@ async function loadMandateDetail(){
 async function loadVorlagen(){
   const vs = await api('/api/vorlagen');
   $('v-list').innerHTML = vs.length
-    ? vs.map(v=>`<option value="${v.name}">${v.name}</option>`).join('')
+    ? vs.map(v=>`<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('')
     : '<option value="">— keine Vorlagen —</option>';
   zeigeVorlage();
 }
@@ -466,7 +467,7 @@ async function loadRechnungen(){
   const s = $('a-mandate').value; if(!s) return;
   const rs = await api(`/api/mandates/${s}/rechnungen`);
   $('r-list').innerHTML = rs.length ? rs.map(r =>
-    `<tr><td>${r.nummer}</td><td>${r.datum}</td>
+    `<tr><td>${esc(r.nummer)}</td><td>${esc(r.datum)}</td>
      <td>${(r.summe_min/60).toFixed(1).replace('.',',')} h</td>
      <td><b>${r.betrag.toFixed(2).replace('.',',')} €</b></td>
      <td style="flex:0"><button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button>
@@ -501,8 +502,8 @@ async function loadZeiten(){
   const s = $('a-mandate').value; if(!s) return;
   const z = await api(`/api/mandates/${s}/zeiten`);
   $('z-list').innerHTML = z.eintraege.length ? z.eintraege.map(e =>
-    `<tr><td>${e.datum}</td><td class="hint">${e.minuten} Min.</td>
-     <td>${e.text.replace(/</g,'&lt;')}</td>
+    `<tr><td>${esc(e.datum)}</td><td class="hint">${e.minuten} Min.</td>
+     <td>${esc(e.text)}</td>
      <td style="flex:0">${e.abgerechnet?'<span class="ok">abgerechnet</span>'
        :`<button class="btn small ghost" onclick="delZeit(${e.id})">×</button>`}</td></tr>`
   ).join('') : '<tr><td class="hint">Noch keine Zeiten</td></tr>';
@@ -541,7 +542,7 @@ async function loadFristen(){
   const offen = fs.filter(f=>!f.erledigt);
   $('f-list').innerHTML = offen.length ? offen.map(f =>
     `<tr class="${f.ueberfaellig?'frist':''}"><td>${f.datum}</td>
-     <td>${f.ueberfaellig?'⚠️ ':''}${f.text.replace(/</g,'&lt;')}</td>
+     <td>${f.ueberfaellig?'⚠️ ':''}${esc(f.text)}</td>
      <td style="flex:0"><button class="btn small ghost" onclick="fristOk(${f.id})">✓</button></td></tr>`
   ).join('') : '<tr><td class="hint">Keine offenen Fristen</td></tr>';
 }
@@ -567,7 +568,7 @@ async function loadWiedervorlage(){
   const offen = fs.filter(f=>!f.erledigt);
   $('w-list').innerHTML = offen.length ? offen.map(f =>
     `<tr class="${f.ueberfaellig?'frist':''}"><td>${f.datum}</td><td>${f.mandate}</td>
-     <td>${f.ueberfaellig?'⚠️ ':''}${f.text.replace(/</g,'&lt;')}</td>
+     <td>${f.ueberfaellig?'⚠️ ':''}${esc(f.text)}</td>
      <td style="flex:0"><button class="btn small ghost" onclick="openArbeit('${f.mandate}')">Öffnen</button></td></tr>`
   ).join('') : '<tr><td class="hint">Keine offenen Fristen</td></tr>';
 }
@@ -576,8 +577,8 @@ async function loadKontakte(){
   const s = $('a-mandate').value; if(!s) return;
   const ks = await api(`/api/mandates/${s}/kontakte`);
   $('k-list').innerHTML = ks.length ? ks.map(k =>
-    `<tr><td><b>${k.rolle}</b></td><td>${k.name.replace(/</g,'&lt;')}</td>
-     <td class="hint">${(k.kontakt||'').replace(/</g,'&lt;')}</td>
+    `<tr><td><b>${esc(k.rolle)}</b></td><td>${esc(k.name)}</td>
+     <td class="hint">${esc(k.kontakt||'')}</td>
      <td style="flex:0"><button class="btn small ghost" onclick="delKontakt(${k.id})">×</button></td></tr>`
   ).join('') : '<tr><td class="hint">Noch keine Kontakte</td></tr>';
 }
@@ -635,7 +636,7 @@ function loadNotes(){
     const icon = {telefonat:'📞', notiz:'💡', aufgabe:'📌'};
     $('n-list').innerHTML = ns.length ? ns.slice().reverse().map(n =>
       `<tr><td style="white-space:nowrap">${new Date(n.t*1000).toLocaleDateString('de-DE')}</td>
-       <td>${icon[n.typ]||'•'}</td><td>${n.inhalt.replace(/</g,'&lt;')}</td>
+       <td>${icon[n.typ]||'•'}</td><td>${esc(n.inhalt)}</td>
        <td style="flex:0"><button class="btn small ghost" onclick="delNote(${n.id})">×</button></td></tr>`
     ).join('') : '<tr><td class="hint">Noch keine Notizen</td></tr>';
   });
@@ -650,7 +651,7 @@ async function delNote(id){
 async function runWorkflow(){
   const s = $('a-mandate').value, q = $('a-question').value;
   if(!s || !q) return;
-  $('a-log').innerHTML += `<div class="msg user">${q}</div>`;
+  $('a-log').innerHTML += `<div class="msg user">${esc(q)}</div>`;
   $('a-question').value = '';
   $('a-status').textContent = 'Workflow läuft: Analyse → Planung → Recherche → Prüfung → Darstellung …';
   const r = await fetch(`/api/mandates/${s}/chat`, {method:'POST',
@@ -705,7 +706,7 @@ async function loadSettings(){
   }
   providerChanged();
   // gespeichertes Modell als Auswahl anbieten, bis neue Modelle geladen werden
-  $('s-model').innerHTML = `<option value="${s.model}">${s.model} (gespeichert)</option>`;
+  $('s-model').innerHTML = `<option value="${esc(s.model)}">${esc(s.model)} (gespeichert)</option>`;
 }
 
 async function loadModels(){
@@ -714,9 +715,9 @@ async function loadModels(){
     const ms = await api('/api/models', {method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({endpoint:$('s-endpoint').value, model:'', api_key:$('s-key').value})});
-    $('s-model').innerHTML = ms.map(m=>`<option value="${m}">${m}</option>`).join('');
+    $('s-model').innerHTML = ms.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
     $('s-msg').innerHTML = `<span class="ok">${ms.length} Modelle gefunden</span>`;
-  } catch(e){ $('s-msg').innerHTML = '<span class="err">'+e.message+'</span>'; }
+  } catch(e){ $('s-msg').innerHTML = '<span class="err">'+esc(e.message)+'</span>'; }
 }
 
 async function testVerbindung(){
@@ -729,7 +730,7 @@ async function testVerbindung(){
     $('s-msg').innerHTML = r.ok
       ? `<span class="ok">✓ Verbindung ok — Modell antwortet (${r.antwort})</span>`
       : `<span class="err">✗ ${r.fehler}</span>`;
-  } catch(e){ $('s-msg').innerHTML = '<span class="err">'+e.message+'</span>'; }
+  } catch(e){ $('s-msg').innerHTML = '<span class="err">'+esc(e.message)+'</span>'; }
 }
 async function saveSettings(){
   const r = await api('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
