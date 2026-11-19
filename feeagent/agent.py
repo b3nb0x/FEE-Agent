@@ -71,7 +71,12 @@ def llm_chat(endpoint: str, model: str, system: str, user: str,
         url, data=json.dumps(payload).encode(), headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode())
-    return data["choices"][0]["message"]["content"]
+    content = data["choices"][0]["message"]["content"]
+    # manche Provider liefern content als Liste von Blöcken statt String
+    if isinstance(content, list):
+        content = "".join(c.get("text", "") for c in content
+                          if isinstance(c, dict))
+    return content
 
 
 def run_workflow(question: str, mandate_ctx: str, settings: dict,

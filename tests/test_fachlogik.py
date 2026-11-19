@@ -114,3 +114,20 @@ def test_email_import_mit_anhang(tmp_path):
     assert r["ok"] and len(r["anhaenge"]) == 1
     txt = (md / "dokumente" / "sn.txt").read_text()
     assert "Stellungnahme" in txt and "15.03.2027" in txt
+
+
+def test_llm_chat_content_als_liste(monkeypatch):
+    """Provider liefern content teils als Blockliste statt String (Claude-kompatibel)."""
+    import json as _json
+    import urllib.request
+    import feeagent.agent as agent
+
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return _json.dumps({"choices": [{"message": {"content": [
+                {"type": "text", "text": "ok"}]}}]}).encode()
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: FakeResp())
+    assert agent.llm_chat("http://x/v1", "m", "s", "u") == "ok"
