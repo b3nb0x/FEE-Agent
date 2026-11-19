@@ -1,0 +1,32 @@
+# Full FEE-System: FEE-Agent + Paperless-ngx (Archiv/OCR) + Ollama (lokales LLM)
+# Lenovo Sparks GDX: eigener lokaler KI-Endpoint – in der GUI als Provider
+# „Sparks GDX" mit dessen IP+Port verbinden (OpenAI-kompatibel).
+services:
+  fee-agent:
+    build: .
+    restart: unless-stopped
+    ports: ["8765:8765"]
+    volumes:
+      - ./data:/data
+      - ./bea-inbox:/bea-inbox
+      - ./paperless-consume:/paperless-consume
+    environment:
+      - FEE_MANDATE_DIR=/data/mandate
+    depends_on: [paperless-ngx]
+
+  paperless-ngx:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    ports: ["8010:8000"]
+    volumes:
+      - ./paperless/data:/usr/src/paperless/data
+      - ./paperless/media:/usr/src/paperless/media
+      - ./paperless-consume:/usr/src/paperless/consume
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports: ["11434:11434"]
+    volumes:
+      - ./ollama:/root/.ollama
+    # Modell ziehen: docker compose -f docker-compose.full.yml exec ollama ollama pull glm-4.7

@@ -307,6 +307,7 @@
       <div class="row"><div><label class="hint">Provider</label>
         <select id="s-provider" onchange="providerChanged()">
           <option value="lokal">Lokal (eigene IP + Port)</option>
+          <option value="sparksgdx">Lenovo Sparks GDX (lokales KI-Gateway)</option>
           <option value="lmstudio">LM Studio (dieser PC)</option>
           <option value="llamacpp">llama.cpp (dieser PC)</option>
           <option value="ollama">Ollama (dieser PC)</option>
@@ -839,6 +840,7 @@ function openArbeit(slug){ showTab('arbeit'); setTimeout(()=>{ $('a-mandate').va
 
 const PROVIDER = {
   lokal:     null,  // aus IP+Port zusammengesetzt
+  sparksgdx: null,  // wie lokal: IP+Port der GDX-Box
   lmstudio:  'http://localhost:1234/v1',
   llamacpp:  'http://localhost:8080/v1',
   ollama:    'http://localhost:11434/v1',
@@ -850,7 +852,9 @@ const PROVIDER = {
 
 function providerChanged(){
   const p = $('s-provider').value;
-  $('row-lokal').classList.toggle('hidden', p !== 'lokal');
+  $('row-lokal').classList.toggle('hidden', !(p === 'lokal' || p === 'sparksgdx'));
+  $('s-ip').placeholder = p==='sparksgdx' ? 'IP der Sparks-GDX-Box' : 'z. B. 192.168.1.10';
+  $('s-port').placeholder = p==='sparksgdx' ? 'z. B. 8080' : '1234';
   if (PROVIDER[p]) $('s-endpoint').value = PROVIDER[p];
   else {
     const ip = $('s-ip').value.trim() || '127.0.0.1';
