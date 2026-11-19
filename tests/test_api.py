@@ -58,3 +58,23 @@ def test_docker_nat_erlaubt_aber_fremd_nicht(test_env):
     assert n.client_allowed("10.0.0.51", "10.0.0.119") is True    # LAN
     assert n.client_allowed("10.9.9.9", "10.0.0.119") is False    # fremd
     assert n.client_allowed("8.8.8.8", "10.0.0.119") is False     # Internet
+
+
+def test_login_rate_limit():
+    """5 Fehlversuche → Sperre, auch für richtiges Passwort (Brute-Force-Schutz)."""
+    from fastapi.testclient import TestClient
+    import feeagent.auth as auth
+    from feeagent import server
+    auth.pam_check = lambda u, p: u == "b3n" and p == "test"
+    c = TestClient(server.app, client=("10.0.0.99", 1))  # eigene IP, belastet andere Tests nicht
+    auth._fehlversuche.clear()
+    try:
+        for _ in range(5):
+            assert c.post("/api/login", json={"username": "b3n", "password": "falsch"}).status_code == 401
+        # 6. Versuch: gesperrt, obwohl Passwort richtig
+        assert c.post("/api/login", json={"username": "b3n", "password": "test"}).status_code == 401
+        # andere IP nicht betroffen
+        c2 = TestClient(server.app, client=("10.0.0.100", 2))
+        assert c2.post("/api/login", json={"username": "b3n", "password": "test"}).status_code == 200
+    finally:
+        auth._fehlversuche.clear()

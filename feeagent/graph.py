@@ -6,7 +6,6 @@ Subagenten lesen den Graph statt ganzer Dokumente (Token-Ersparnis).
 """
 import json
 import re
-from collections import defaultdict
 from pathlib import Path
 
 RE_NORM = re.compile(r"§\s?\d+[a-z]?(?:\s?(?:Abs\.|Absatz)\s?\d+)?"

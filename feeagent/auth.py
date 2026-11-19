@@ -11,6 +11,30 @@ from . import db
 
 SESSIONS: dict = {}  # token -> {"user", "role"}
 _lock = threading.Lock()
+_fehlversuche: dict = {}  # ip -> [anzahl, sperrzeit]
+MAX_FEHL = 5
+SPERRE_S = 300
+
+
+def _rate_limit(ip: str) -> bool:
+    """False = gesperrt. 5 Fehlversuche → 5 Minuten Sperre (Brute-Force-Schutz)."""
+    import time
+    eintrag = _fehlversuche.get(ip)
+    if eintrag and eintrag[1] > time.time():
+        return False
+    return True
+
+
+def _fehl_login(ip: str) -> None:
+    import time
+    anzahl, _ = _fehlversuche.get(ip, (0, 0))
+    anzahl += 1
+    sperre_bis = time.time() + SPERRE_S if anzahl >= MAX_FEHL else 0
+    _fehlversuche[ip] = (anzahl, sperre_bis)
+
+
+def _erfolgreich(ip: str) -> None:
+    _fehlversuche.pop(ip, None)
 
 
 def pam_check(user: str, password: str) -> bool:
@@ -23,10 +47,14 @@ def pam_check(user: str, password: str) -> bool:
         return False
 
 
-def login(user: str, password: str) -> dict | None:
+def login(user: str, password: str, client_ip: str = "?") -> dict | None:
     users = db.load_users()
-    if not pam_check(user, password):
+    if not _rate_limit(client_ip):
         return None
+    if not pam_check(user, password):
+        _fehl_login(client_ip)
+        return None
+    _erfolgreich(client_ip)
     if user not in users:  # erster Account wird Admin (Bootstrap)
         role = "admin" if not users else "nutzer"
         users[user] = {"role": role}

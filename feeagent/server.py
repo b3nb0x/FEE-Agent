@@ -104,8 +104,9 @@ class UserRole(BaseModel):
 
 
 @app.post("/api/login")
-def do_login(l: LoginRequest):
-    sess = auth.login(l.username, l.password)
+def do_login(l: LoginRequest, request: Request):
+    sess = auth.login(l.username, l.password,
+                      request.client.host if request.client else "?")
     if not sess:
         raise HTTPException(401, "Anmeldung fehlgeschlagen (PC-Konto prüfen)")
     resp = JSONResponse(content={"user": sess["user"], "role": sess["role"]})
@@ -425,8 +426,9 @@ def kontakt_neu(slug: str, k: Kontakt):
 
 
 @app.delete("/api/mandates/{slug}/kontakte/{kid}")
-def kontakt_weg(slug: str, kid: int):
+def kontakt_weg(slug: str, kid: int, request: Request):
     db.kontakt_del(kid, slug)
+    db.audit(_user(request), "kontakt-loeschen", slug, str(kid))
     return {"ok": True}
 
 
@@ -514,9 +516,10 @@ def zeit_weg(slug: str, zid: int):
 
 
 @app.post("/api/mandates/{slug}/zeiten/abrechnen")
-def zeiten_abrechnen(slug: str):
+def zeiten_abrechnen(slug: str, request: Request):
     """Alle offenen Zeiten als abgerechnet markieren (Rechnungsvorbereitung)."""
     n = db.zeiten_abrechnen(slug)
+    db.audit(_user(request), "zeiten-abrechnen", slug, str(n))
     return {"ok": True, "abgerechnet": n, "summe": db.zeiten_summe(slug)}
 
 
