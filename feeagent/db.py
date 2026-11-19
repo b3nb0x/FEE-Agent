@@ -60,7 +60,21 @@ def init() -> None:
             name TEXT PRIMARY KEY, text TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS portal(
             mandate TEXT PRIMARY KEY, token TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS termine(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mandate TEXT, datum TEXT NOT NULL, uhrzeit TEXT DEFAULT '',
+            titel TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_termine_datum ON termine(datum);
         """)
+    # Migration: aktenzeichen + zahlstatus nachrüsten
+    with conn() as c:
+        mcols = [r[1] for r in c.execute("PRAGMA table_info(mandate_meta)")] if             c.execute("SELECT name FROM sqlite_master WHERE name='mandate_meta'").fetchone() else []
+        if not mcols:
+            c.execute("CREATE TABLE mandate_meta(mandate TEXT PRIMARY KEY, aktenzeichen TEXT DEFAULT '', bemerkung TEXT DEFAULT '')")
+        rcols = [r[1] for r in c.execute("PRAGMA table_info(rechnungen)")]
+        for col, ddl in (("zahlstatus","TEXT DEFAULT 'offen'"), ("gezahlt_am","TEXT DEFAULT ''")):
+            if col not in rcols:
+                c.execute(f"ALTER TABLE rechnungen ADD COLUMN {col} {ddl}")
     # Migration bestehender DBs: Spalte rechnung_id nachrüsten
     with conn() as c:
         cols = [r[1] for r in c.execute("PRAGMA table_info(zeiten)")]
@@ -318,9 +332,9 @@ def rechnungen(mandate: str) -> list:
     init()
     with conn() as c:
         return [dict(zip(("id", "mandate", "nummer", "datum", "stundensatz",
-                          "summe_min", "betrag"), row))
+                          "summe_min", "betrag", "zahlstatus", "gezahlt_am"), row))
                 for row in c.execute(
-                    "SELECT id,mandate,nummer,datum,stundensatz,summe_min,betrag "
+                    "SELECT id,mandate,nummer,datum,stundensatz,summe_min,betrag,zahlstatus,gezahlt_am "
                     "FROM rechnungen WHERE mandate=? ORDER BY id DESC", (mandate,))]
 
 
@@ -328,7 +342,7 @@ def rechnung(rid: int, mandate: str) -> dict | None:
     """Rechnung mit Positionen (die zugehörigen Zeiten)."""
     init()
     with conn() as c:
-        row = c.execute("SELECT id,mandate,nummer,datum,stundensatz,summe_min,betrag "
+        row = c.execute("SELECT id,mandate,nummer,datum,stundensatz,summe_min,betrag,zahlstatus,gezahlt_am "
                         "FROM rechnungen WHERE id=? AND mandate=?",
                         (rid, mandate)).fetchone()
         if not row:
@@ -337,6 +351,7 @@ def rechnung(rid: int, mandate: str) -> dict | None:
                         "WHERE rechnung_id=? ORDER BY datum", (rid,)).fetchall()
     return {"id": row[0], "mandate": row[1], "nummer": row[2], "datum": row[3],
             "stundensatz": row[4], "summe_min": row[5], "betrag": row[6],
+            "zahlstatus": row[7] or "offen", "gezahlt_am": row[8] or "",
             "positionen": [{"datum": p[0], "minuten": p[1], "text": p[2]} for p in pos]}
 
 
@@ -397,3 +412,65 @@ def alle_fristen() -> list:
     heute = time.strftime("%Y-%m-%d")
     return [{"id": r[0], "mandate": r[1], "datum": r[2], "text": r[3],
              "erledigt": r[4], "ueberfaellig": r[2] < heute} for r in rows]
+
+
+# ------------------------------------------------------------------ Mandats-Meta
+
+def meta(mandate: str) -> dict:
+    init()
+    with conn() as c:
+        row = c.execute("SELECT aktenzeichen, bemerkung FROM mandate_meta "
+                        "WHERE mandate=?", (mandate,)).fetchone()
+    return {"aktenzeichen": row[0] if row else "", "bemerkung": row[1] if row else ""}
+
+
+def meta_set(mandate: str, aktenzeichen: str = None, bemerkung: str = None) -> None:
+    init()
+    m = meta(mandate)
+    with conn() as c:
+        c.execute("INSERT INTO mandate_meta(mandate,aktenzeichen,bemerkung) VALUES(?,?,?) "
+                  "ON CONFLICT(mandate) DO UPDATE SET "
+                  "aktenzeichen=COALESCE(excluded.aktenzeichen, mandate_meta.aktenzeichen), "
+                  "bemerkung=COALESCE(excluded.bemerkung, mandate_meta.bemerkung)",
+                  (mandate, aktenzeichen if aktenzeichen is not None else m["aktenzeichen"],
+                   bemerkung if bemerkung is not None else m["bemerkung"]))
+
+
+# ------------------------------------------------------------------ Termine
+
+def termin_add(mandate: str | None, datum: str, uhrzeit: str, titel: str) -> dict:
+    init()
+    with conn() as c:
+        cur = c.execute("INSERT INTO termine(mandate,datum,uhrzeit,titel) VALUES(?,?,?,?)",
+                        (mandate, datum, uhrzeit, titel))
+    return {"id": cur.lastrowid, "mandate": mandate, "datum": datum,
+            "uhrzeit": uhrzeit, "titel": titel}
+
+
+def termine_bis(datum_bis: str, mandate: str | None = None) -> list:
+    init()
+    with conn() as c:
+        if mandate:
+            rows = c.execute("SELECT id,mandate,datum,uhrzeit,titel FROM termine "
+                             "WHERE mandate=? AND datum<=? ORDER BY datum,uhrzeit",
+                             (mandate, datum_bis)).fetchall()
+        else:
+            rows = c.execute("SELECT id,mandate,datum,uhrzeit,titel FROM termine "
+                             "WHERE datum<=? ORDER BY datum,uhrzeit",
+                             (datum_bis,)).fetchall()
+    return [dict(zip(("id","mandate","datum","uhrzeit","titel"), r)) for r in rows]
+
+
+def termin_del(tid: int) -> None:
+    with conn() as c:
+        c.execute("DELETE FROM termine WHERE id=?", (tid,))
+
+
+# ------------------------------------------------------------------ Zahlstatus
+
+def rechnung_zahlstatus(rid: int, mandate: str, status: str, gezahlt_am: str = "") -> None:
+    if status not in ("offen", "bezahlt", "mahnung"):
+        raise ValueError("status: offen|bezahlt|mahnung")
+    with conn() as c:
+        c.execute("UPDATE rechnungen SET zahlstatus=?, gezahlt_am=? WHERE id=? AND mandate=?",
+                  (status, gezahlt_am, rid, mandate))

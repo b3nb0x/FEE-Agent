@@ -91,6 +91,13 @@
 <aside>
   <h3>📌 ToDo / Wiedervorlage</h3>
   <div id="todo-list"><div class="hint">lädt …</div></div>
+  <h3>📅 Termine</h3>
+  <div id="termin-list"><div class="hint">lädt …</div></div>
+  <div class="row" style="margin-top:6px">
+    <input id="t-neu" placeholder="Neuer Termin: JJJJ-MM-TT HH:MM Titel"
+           onkeydown="if(event.key==='Enter')addTermin()" style="font-size:12px">
+    <button class="btn small" onclick="addTermin()">+</button>
+  </div>
 </aside>
 <main>
   <!-- MANDATE -->
@@ -141,6 +148,10 @@
       <div class="row">
         <div><label class="hint">Mandat</label>
           <select id="a-mandate" onchange="loadMandateDetail()"></select></div>
+        <div><label class="hint">Aktenzeichen</label>
+          <input id="a-az" placeholder="z. B. 123 C 456/26" oninput="saveMeta()"></div>
+        <div style="flex:0;align-self:flex-end">
+          <button class="btn ghost" onclick="azAuto()">AZ automatisch erkennen</button></div>
       </div>
       <div class="row">
         <div><label class="hint">Dokument hochladen (PDF/Word/Excel/Bild → OCR)
@@ -193,7 +204,7 @@
           <button class="btn" onclick="rechnungErstellen()">Rechnung aus abgerechneten Zeiten</button>
         </div>
       </div>
-      <table><tbody id="r-list"></tbody></table>
+      <table><thead><tr><th>Nummer</th><th>Datum</th><th>Zeit</th><th>Betrag</th><th>Status</th><th></th></tr></thead><tbody id="r-list"></tbody></table>
       <pre id="r-detail" class="hint" style="white-space:pre-wrap"></pre>
     </div>
     <div class="panel">
@@ -433,9 +444,30 @@ async function loadMandateSelect(){
   loadMandateDetail();
 }
 
+let metaTimer;
+function saveMeta(){
+  clearTimeout(metaTimer);
+  metaTimer = setTimeout(async ()=>{
+    const s=$('a-mandate').value; if(!s) return;
+    await api(`/api/mandates/${s}/meta`, {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({aktenzeichen:$('a-az').value, bemerkung:''})});
+  }, 400);
+}
+async function azAuto(){
+  const s=$('a-mandate').value; if(!s) return;
+  const r = await api(`/api/mandates/${s}/meta/az-auto`, {method:'POST'});
+  if(r.aktenzeichen && r.aktenzeichen.length){
+    $('a-az').value = r.aktenzeichen[0]; saveMeta();
+    $('a-status').textContent = 'Aktenzeichen erkannt: ' + r.aktenzeichen.join(', ');
+  } else $('a-status').textContent = 'Kein Aktenzeichen in den Dokumenten gefunden';
+}
+
 async function loadMandateDetail(){
   const s = $('a-mandate').value; if(!s) return;
   const d = await api('/api/mandates/'+s);
+  const meta = await api(`/api/mandates/${s}/meta`);
+  $('a-az').value = meta.aktenzeichen || '';
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
   loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen(); loadVorlagen();
 }
@@ -485,7 +517,10 @@ async function loadRechnungen(){
     `<tr><td>${esc(r.nummer)}</td><td>${esc(r.datum)}</td>
      <td>${(r.summe_min/60).toFixed(1).replace('.',',')} h</td>
      <td><b>${r.betrag.toFixed(2).replace('.',',')} €</b></td>
-     <td style="flex:0"><button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button>
+     <td>${r.zahlstatus==='bezahlt'?'<span class="ok">bezahlt</span>':r.zahlstatus==='mahnung'?'<span class="frist">Mahnung</span>':'<span class="hint">offen</span>'}</td>
+     <td style="flex:0"><button class="btn small ghost" onclick="setZahlung(${r.id},'bezahlt')">✓ bezahlt</button>
+     <button class="btn small ghost" onclick="setZahlung(${r.id},'mahnung')">Mahnung</button>
+     <button class="btn small ghost" onclick="zeigeRechnung(${r.id})">Details</button>
      <button class="btn small ghost" onclick="window.open('/api/mandates/${s}/rechnungen/${r.id}/druck')">PDF</button></td></tr>`
   ).join('') : '<tr><td class="hint">Noch keine Rechnungen</td></tr>';
 }
@@ -500,6 +535,12 @@ async function zeigeRechnung(id){
     `Stundensatz: ${r.stundensatz.toFixed(2).replace('.',',')} €\n\n${pos}\n\n` +
     `Summe: ${(r.summe_min/60).toFixed(2).replace('.',',')} h = ${r.betrag.toFixed(2).replace('.',',')} €\n\n` +
     `(Vorlage, keine Steuerrechnung – RVG/Steuer prüfen)`;
+}
+
+async function setZahlung(id, status){
+  const s = $('a-mandate').value;
+  await api(`/api/mandates/${s}/rechnungen/${id}/zahlung?status=${status}`, {method:'POST'});
+  loadRechnungen();
 }
 
 async function rechnungErstellen(){
@@ -754,6 +795,37 @@ async function saveSettings(){
   $('s-msg').innerHTML = r.ok ? '<span class="ok">Gespeichert</span>' : '<span class="err">Fehler</span>';
 }
 
+async function loadTermine(){
+  try {
+    const heute = new Date().toISOString().slice(0,10);
+    const ts = await api('/api/termine?bis=2100-12-31');
+    const kommend = ts.filter(t=>t.datum>=heute).slice(0,10);
+    $('termin-list').innerHTML = kommend.length ? kommend.map(t=>
+      `<div class="todo" onclick="${t.mandate?`openArbeit('${t.mandate}')`:''}">
+         <div class="d">${t.datum} ${t.uhrzeit||''} ${t.mandate?'· '+esc(t.mandate):''}</div>
+         ${esc(t.titel)}
+         <button class="btn small ghost" onclick="event.stopPropagation();delTermin(${t.id})">×</button></div>`
+    ).join('') : '<div class="hint">Keine Termine</div>';
+  } catch(e){}
+}
+
+async function addTermin(){
+  const v = $('t-neu').value.trim(); if(!v) return;
+  const m = v.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}))?\s+(.+)$/);
+  if(!m){ alert('Format: JJJJ-MM-TT HH:MM Titel'); return; }
+  const s = $('a-mandate').value || '';
+  const r = await api('/api/termine', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({mandate:s, datum:m[1], uhrzeit:m[2]||'', titel:m[3]})});
+  if(r.detail){ alert(r.detail); return; }
+  $('t-neu').value=''; loadTermine(); loadTodo();
+}
+
+async function delTermin(id){
+  await api('/api/termine/'+id, {method:'DELETE'});
+  loadTermine();
+}
+
 async function loadTodo(){
   try {
     const fs = await api('/api/fristen');
@@ -767,8 +839,8 @@ async function loadTodo(){
 }
 
 (async () => {
-  loadTodo();
-  setInterval(loadTodo, 30000);
+  loadTodo(); loadTermine();
+  setInterval(()=>{loadTodo();loadTermine();}, 30000);
   const r = await fetch('/api/me');
   if (r.ok) initUser(await r.json());
   else document.getElementById('overlay').classList.remove('hidden');

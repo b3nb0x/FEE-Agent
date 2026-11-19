@@ -14,7 +14,9 @@ RE_NORM = re.compile(r"§\s?\d+[a-z]?(?:\s?(?:Abs\.|Absatz)\s?\d+)?"
                      r"KSchG|BUrlG|ArbZG|AGG|BetrVG|UWG|GWB|RVG|GKG|MiLoG|EGBGB)\b")
 RE_DATE = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{4}-\d{2}-\d{2})\b")
 RE_AMOUNT = re.compile(r"(\d[\d.,]*)\s?(?:€|EUR|Euro)(?![A-Za-z])")
-RE_AZ = re.compile(r"\b([A-Z]{2,8}\s?[A-Z]{0,3}\s?\d{1,3}\s?\/\s?\d{2,4})\b")
+# Aktenzeichen: "123 C 456/26", "12 O 345/25", "5 S 67/2026", "VG 3 K 123/24"
+RE_AZ = re.compile(r"\b(?:\d{1,3}\s?[A-Z]{1,3}\s?\d{1,3}\/\d{2,4}|"
+                   r"[A-Z]{2,8}\s?[A-Z]{0,3}\s?\d{1,3}\s?\/\s?\d{2,4})\b")
 
 
 def build(mandate_dir: Path) -> dict:

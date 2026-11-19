@@ -159,3 +159,41 @@ def test_upload_erstellt_fristen_automatisch(client, tmp_path):
                 files={"file": ("brief.txt", f.read_bytes(), "text/plain")})
     fr2 = client.get("/api/mandates/tf/fristen").json()
     assert len([x for x in fr2 if x["datum"] == "2027-03-15"]) == 1
+
+
+def test_meta_aktenzeichen_auto(client, tmp_path):
+    _mandat(client)
+    f = tmp_path / "brief.txt"
+    f.write_text("Aktenzeichen: 123 C 456/26, Verhandlung am 15.03.2027")
+    client.post("/api/mandates/tf/documents",
+                files={"file": ("b.txt", f.read_bytes(), "text/plain")})
+    r = client.post("/api/mandates/tf/meta/az-auto")
+    assert r.status_code == 200 and "123 C 456/26" in r.json()["aktenzeichen"]
+    assert client.get("/api/mandates/tf/meta").json()["aktenzeichen"] == "123 C 456/26"
+    # manuell setzen
+    client.post("/api/mandates/tf/meta", json={"aktenzeichen": "999 O 1/27", "bemerkung": "x"})
+    assert client.get("/api/mandates/tf/meta").json()["aktenzeichen"] == "999 O 1/27"
+
+
+def test_termine(client):
+    _mandat(client)
+    r = client.post("/api/termine", json={"mandate": "tf", "datum": "2027-01-10",
+                                           "uhrzeit": "10:00", "titel": "Gerichtstermin"})
+    assert r.status_code == 200
+    assert client.post("/api/termine", json={"mandate": "", "datum": "bad", "titel": "x"}).status_code == 400
+    ts = client.get("/api/termine?bis=2027-12-31").json()
+    assert ts[0]["titel"] == "Gerichtstermin"
+    assert client.delete(f"/api/termine/{ts[0]['id']}").json()["ok"]
+
+
+def test_zahlstatus(client):
+    _mandat(client)
+    client.post("/api/mandates/tf/zeiten", json={"datum": "2026-11-19", "minuten": 60, "text": "t"})
+    client.post("/api/mandates/tf/zeiten/abrechnen")
+    client.post("/api/settings", json={"endpoint": "http://x/v1", "model": "", "api_key": "", "stundensatz": "100"})
+    rid = client.post("/api/mandates/tf/rechnungen").json()["id"]
+    assert client.get(f"/api/mandates/tf/rechnungen/{rid}").json()["zahlstatus"] == "offen"
+    r = client.post(f"/api/mandates/tf/rechnungen/{rid}/zahlung?status=bezahlt")
+    assert r.json()["zahlstatus"] == "bezahlt" and r.json()["gezahlt_am"]
+    r = client.post(f"/api/mandates/tf/rechnungen/{rid}/zahlung?status=mahnung")
+    assert r.json()["zahlstatus"] == "mahnung"

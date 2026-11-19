@@ -676,3 +676,76 @@ def rvg_rechnen(r: RvgRequest):
     if r.ust:
         g["betrag_inkl_ust"] = round(g["betrag"] * 1.19, 2)
     return g
+
+
+# ------------------------------------------------------------------ Meta/Termine/Zahlung
+
+class Meta(BaseModel):
+    aktenzeichen: str = ""
+    bemerkung: str = ""
+
+
+class Termin(BaseModel):
+    mandate: str = ""
+    datum: str
+    uhrzeit: str = ""
+    titel: str
+
+
+@app.get("/api/mandates/{slug}/meta")
+def meta_get(slug: str):
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.meta(slug)
+
+
+@app.post("/api/mandates/{slug}/meta")
+def meta_post(slug: str, m: Meta, request: Request):
+    require_admin(request)
+    if not agent.mandate_path(slug).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    db.meta_set(slug, m.aktenzeichen.strip()[:50] or None, m.bemerkung.strip()[:500] or None)
+    return db.meta(slug)
+
+
+@app.post("/api/mandates/{slug}/meta/az-auto")
+def az_auto(slug: str, request: Request):
+    """Aktenzeichen automatisch aus Dokumenten-Volltexten erkennen (Graph)."""
+    require_admin(request)
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    g = fee_graph.build(p)
+    az = g.get("nodes", {}).get("aktenzeichen", [])
+    if az:
+        db.meta_set(slug, az[0])
+    return {"aktenzeichen": az}
+
+
+@app.get("/api/termine")
+def termine_api(bis: str = "2100-12-31", mandate: str = ""):
+    return db.termine_bis(bis, mandate or None)
+
+
+@app.post("/api/termine")
+def termin_api(t: Termin):
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", t.datum) or not t.titel.strip():
+        raise HTTPException(400, "Datum (JJJJ-MM-TT) und Titel erforderlich")
+    if t.mandate and not agent.mandate_path(t.mandate).exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    return db.termin_add(t.mandate or None, t.datum, t.uhrzeit[:5], t.titel.strip()[:200])
+
+
+@app.delete("/api/termine/{tid}")
+def termin_del_api(tid: int):
+    db.termin_del(tid)
+    return {"ok": True}
+
+
+@app.post("/api/mandates/{slug}/rechnungen/{rid}/zahlung")
+def zahlung_api(slug: str, rid: int, request: Request, status: str = "bezahlt", gezahlt_am: str = ""):
+    require_admin(request)
+    import time as _t
+    db.rechnung_zahlstatus(rid, slug, status, gezahlt_am or _t.strftime("%Y-%m-%d"))
+    return db.rechnung(rid, slug)
