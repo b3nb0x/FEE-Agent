@@ -328,7 +328,7 @@ class Kontakt(BaseModel):
     kontakt: str = ""
 
 
-@app.get("/api/mandates/{slug}/kontakte")
+@app.delete("/api/mandates/{slug}/notes/{note_id}")
 def del_note(slug: str, note_id: int):
     p = agent.mandate_path(slug)
     if not p.exists():

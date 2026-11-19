@@ -103,3 +103,9 @@ FEE-Agent ist die Orchestrierungsschicht; F.E.E. (`b3nb0x/F.E.E.`) liefert das j
 ## Lizenz
 
 MIT
+
+## Tests
+
+```
+./.venv/bin/python -m pytest tests/ -q
+```
