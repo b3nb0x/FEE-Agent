@@ -95,3 +95,23 @@ def extrahieren(text: str, quell_datum: date | None = None) -> list:
         _add(b + timedelta(days=tage),
              text[max(0, m.start() - 60):m.end() + 60].replace("\n", " "))
     return out
+
+
+def auto_eintragen(mandate_dir, slug: str, db_mod) -> int:
+    """Alle Dokument-Volltexte des Mandats scannen, neue Fristen in die DB.
+    Rückgabe: Anzahl neuer Fristen."""
+    from datetime import date as _d
+    dok = mandate_dir / "dokumente"
+    if not dok.exists():
+        return 0
+    neu = 0
+    for txt in sorted(dok.glob("*.txt")) + sorted(dok.glob("*.csv")):
+        try:
+            text = txt.read_text(encoding="utf-8", errors="replace")[:50000]
+        except Exception:  # noqa: BLE001
+            continue
+        for f in extrahieren(text, _d.today()):
+            r = db_mod.add_frist(slug, f["datum"], "auto: " + f["text"][:450])
+            if not r.get("duplikat"):
+                neu += 1
+    return neu

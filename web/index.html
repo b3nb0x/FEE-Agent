@@ -181,6 +181,19 @@
       <textarea id="v-text" rows="5" style="width:100%" placeholder="Vorlagentext, z. B. Mahnung: Sehr geehrte Damen und Herren, …"></textarea>
     </div>
     <div class="panel">
+      <h2>beA (Anwaltspostfach)</h2>
+      <div class="hint">Postausgang: Entwurf liegt in postausgang/bea-outbox/ –
+        der offizielle beA-Client signiert &amp; sendet. Posteingang: ~/bea-inbox/ importieren.</div>
+      <div class="row" style="margin-top:8px">
+        <div><input id="bea-titel" placeholder="Titel, z. B. Klage (AZ aus Mandat)"></div>
+        <div><input id="bea-empf" placeholder="Empfänger-SAFe-ID (optional)"></div>
+        <div style="flex:0"><button class="btn ghost" onclick="beaInbox()">📥 Posteingang importieren</button></div>
+        <div style="flex:0"><button class="btn" onclick="beaOutbox()">Postausgang-Entwurf</button></div>
+      </div>
+      <div id="bea-msg" class="hint"></div>
+      <table><tbody id="bea-list"></tbody></table>
+    </div>
+    <div class="panel">
       <h2>Zeiterfassung</h2>
       <div class="row">
         <div style="flex:0"><input id="z-datum" type="date"></div>
@@ -469,7 +482,35 @@ async function loadMandateDetail(){
   const meta = await api(`/api/mandates/${s}/meta`);
   $('a-az').value = meta.aktenzeichen || '';
   $('a-memory').textContent = d.mandat_md + '\n\n--- Fristen ---\n' + d.fristen_md;
-  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen(); loadVorlagen();
+  loadNotes(); loadFristen(); loadKontakte(); loadZeiten(); loadRechnungen(); loadVorlagen(); loadBea();
+}
+
+async function loadBea(){
+  const s = $('a-mandate').value; if(!s) return;
+  const os = await api(`/api/mandates/${s}/bea/outbox`);
+  $('bea-list').innerHTML = os.length ? os.map(o=>
+    `<tr><td>${o.nr}</td><td>${esc(o.titel)}</td><td class="hint">${esc(o.empfaenger||'')}</td>
+     <td><span class="hint">${o.status}</span></td></tr>`).join('')
+    : '<tr><td class="hint">Keine Entwürfe</td></tr>';
+}
+
+async function beaOutbox(){
+  const s = $('a-mandate').value;
+  const text = $('a-log').innerText || $('a-question').value;
+  const r = await api(`/api/mandates/${s}/bea/outbox`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({titel:$('bea-titel').value||'Schriftsatz', text, empfaenger:$('bea-empf').value})});
+  $('bea-msg').innerHTML = r.nr ? `<span class="ok">Entwurf ${r.nr} in bea-outbox/</span>` : '<span class="err">'+esc(r.detail||'?')+'</span>';
+  loadBea();
+}
+
+async function beaInbox(){
+  const s = $('a-mandate').value;
+  const r = await api(`/api/mandates/${s}/bea/inbox`, {method:'POST'});
+  $('bea-msg').innerHTML = r.ok
+    ? `<span class="ok">📥 ${r.neu} neue Nachricht(en) importiert</span>`
+    : `<span class="err">${esc(r.fehler)}</span>`;
+  if(r.ok){ loadFristen(); loadTodo(); }
 }
 
 async function loadVorlagen(){

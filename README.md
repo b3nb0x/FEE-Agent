@@ -109,3 +109,14 @@ MIT
 ```
 ./.venv/bin/python -m pytest tests/ -q
 ```
+
+## beA-Bridge (Anwaltspostfach)
+
+beA läuft über das zertifizierte SAFE/OSCI-Protokoll der BRAK – dafür wird der
+offizielle beA-Client benötigt. FEE-Agent übernimmt die Kanzlei-Seite:
+
+- **Postausgang:** Tab „Fallbearbeitung" → beA → Entwurf anlegen. Liegt als
+  JSON+Text in `postausgang/bea-outbox/` des Mandats, bereit für den beA-Client.
+- **Posteingang:** beA-Client legt Nachrichten in `~/bea-inbox/` ab →
+  „Posteingang importieren" liest sie als Dokumente ein (inkl. automatischer
+  Fristen- und Aktenzeichen-Erkennung).

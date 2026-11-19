@@ -264,19 +264,9 @@ async def upload_document(slug: str, file: UploadFile = File(...)):
         result = headroom.run_heavy(ocr.process_document, tmp, p)
         if result.get("ok"):
             fee_graph.save(p)  # Wissensgraph nach neuem Dokument aktualisieren
-            # Fristen automatisch aus dem Volltext erkennen und eintragen
+            # Fristen automatisch aus allen Dokumenten erkennen und eintragen
             from . import fristen as fee_fristen
-            from datetime import date as _date
-            vt = p / "dokumente" / (tmp.stem + ".txt")
-            if vt.exists():
-                for f in fee_fristen.extrahieren(
-                        vt.read_text(encoding="utf-8", errors="replace")[:50000],
-                        _date.today()):
-                    try:
-                        db.add_frist(slug, f["datum"],
-                                     "auto: " + f["text"][:450])
-                    except Exception:  # noqa: BLE001 – Duplikate ignorieren
-                        pass
+            fee_fristen.auto_eintragen(p, slug, db)
     except RuntimeError as e:
         result = {"ok": False, "fehler": str(e)}
     tmp.unlink(missing_ok=True)
@@ -749,3 +739,47 @@ def zahlung_api(slug: str, rid: int, request: Request, status: str = "bezahlt", 
     import time as _t
     db.rechnung_zahlstatus(rid, slug, status, gezahlt_am or _t.strftime("%Y-%m-%d"))
     return db.rechnung(rid, slug)
+
+
+# ------------------------------------------------------------------ beA-Bridge
+
+class BeaEntwurf(BaseModel):
+    titel: str
+    text: str
+    empfaenger: str = ""
+
+
+@app.post("/api/mandates/{slug}/bea/outbox")
+def bea_outbox_neu(slug: str, b: BeaEntwurf, request: Request):
+    """beA-Postausgang-Entwurf anlegen (zum beA-Client senden)."""
+    require_admin(request)
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    from . import bea
+    meta = db.meta(slug)
+    return bea.entwurf_erstellen(p, b.titel, b.text, b.empfaenger,
+                                 meta.get("aktenzeichen", ""))
+
+
+@app.get("/api/mandates/{slug}/bea/outbox")
+def bea_outbox_liste(slug: str):
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    from . import bea
+    return bea.outbox_liste(p)
+
+
+@app.post("/api/mandates/{slug}/bea/inbox")
+def bea_inbox(slug: str, request: Request):
+    """beA-Posteingang des beA-Clients importieren (~/bea-inbox/)."""
+    require_admin(request)
+    p = agent.mandate_path(slug)
+    if not p.exists():
+        raise HTTPException(404, "Mandat nicht gefunden")
+    from . import bea, fristen as fee_fristen
+    r = bea.posteingang_importieren(p)
+    if r.get("ok") and r.get("neu"):
+        r["fristen_neu"] = fee_fristen.auto_eintragen(p, slug, db)
+    return r

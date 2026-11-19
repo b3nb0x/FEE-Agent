@@ -197,3 +197,32 @@ def test_zahlstatus(client):
     assert r.json()["zahlstatus"] == "bezahlt" and r.json()["gezahlt_am"]
     r = client.post(f"/api/mandates/tf/rechnungen/{rid}/zahlung?status=mahnung")
     assert r.json()["zahlstatus"] == "mahnung"
+
+
+def test_bea_outbox_und_inbox(client, tmp_path, monkeypatch):
+    _mandat(client)
+    # Outbox: Entwurf anlegen
+    r = client.post("/api/mandates/tf/bea/outbox",
+                    json={"titel": "Klage", "text": "Sehr geehrte...", "empfaenger": "vg@bea"})
+    assert r.status_code == 200 and r.json()["nr"]
+    liste = client.get("/api/mandates/tf/bea/outbox").json()
+    assert liste[0]["titel"] == "Klage"
+    # Inbox: beA-Client-Ordner simulieren
+    import feeagent.bea as bea
+    inbox = tmp_path / "bea-inbox"; inbox.mkdir()
+    (inbox / "gericht.eml").write_text(
+        "From: Gericht\nSubject: Ladung\n\nTermin 15.03.2027, Frist bis 01.04.2027")
+    r = client.post("/api/mandates/tf/bea/inbox")
+    # ohne Konfig zeigt er auf ~/bea-inbox – hier direkt Funktion testen:
+    res = bea.posteingang_importieren(_mandat_dir(client), inbox)
+    assert res["ok"] and res["neu"] == 1
+    # Auto-Fristen aus der importierten beA-Nachricht (wie im API-Endpunkt):
+    import feeagent.fristen as ff, feeagent.db as db
+    ff.auto_eintragen(_mandat_dir(client), "tf", db)
+    fr = client.get("/api/mandates/tf/fristen").json()
+    assert any(f["datum"] == "2027-04-01" for f in fr)
+
+
+def _mandat_dir(client):
+    import feeagent.agent as agent
+    return agent.MANDATE_DIR / "tf"
